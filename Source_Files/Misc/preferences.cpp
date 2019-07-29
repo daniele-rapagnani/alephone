@@ -3508,8 +3508,10 @@ static void default_graphics_preferences(graphics_preferences_data *preferences)
 	preferences->screen_mode.bit_depth = 32;
 	
 	preferences->screen_mode.draw_every_other_line= false;
-	
+
+#ifdef HAVE_OPENGL
 	OGL_SetDefaults(preferences->OGL_Configure);
+#endif
 
 	preferences->double_corpse_limit= false;
 	preferences->hog_the_cpu = false;

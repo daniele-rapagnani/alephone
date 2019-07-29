@@ -360,6 +360,10 @@ SDL_Rect Screen::view_rect()
 	else
 	{
 		int available_height = window_height() - hud_rect().h;
+#ifdef __ANDROID__
+		r.w = window_width();
+		r.h = available_height;
+#else
 		if (window_width() > available_height * 2)
 		{
 			r.w = available_height * 2;
@@ -370,6 +374,7 @@ SDL_Rect Screen::view_rect()
 			r.w = window_width();
 			r.h = window_width() / 2;
 		}
+#endif
 		r.x = (width() - r.w) / 2;
 		r.y = (height() - window_height()) / 2 + (available_height - r.h) / 2;
 	}
@@ -939,30 +944,36 @@ static void change_screen_mode(int width, int height, int depth, bool nogl, bool
 	}
 	if (main_screen != NULL && !nogl && screen_mode.acceleration == _opengl_acceleration)
 	{
+#ifdef HAVE_OPENGL
 		// see if we can actually run shaders
 		if (!context_created) {
 			SDL_GL_CreateContext(main_screen);
 			context_created = true;
 		}
+#endif
 #ifdef __WIN32__
 		glewInit();
 #endif
+#ifdef HAVE_OPENGL
 		if (!OGL_CheckExtension("GL_ARB_vertex_shader") || !OGL_CheckExtension("GL_ARB_fragment_shader") || !OGL_CheckExtension("GL_ARB_shader_objects") || !OGL_CheckExtension("GL_ARB_shading_language_100"))
 		{
 			logWarning("OpenGL (Shader) renderer is not available");
 			fprintf(stderr, "WARNING: Failed to initialize OpenGL renderer\n");
 			fprintf(stderr, "WARNING: Retrying with Software renderer\n");
+#endif
 			screen_mode.acceleration = graphics_preferences->screen_mode.acceleration = _no_acceleration;
 			main_screen = SDL_CreateWindow(get_application_name().c_str(),
 										   SDL_WINDOWPOS_CENTERED,
 										   SDL_WINDOWPOS_CENTERED,
 										   sdl_width, sdl_height,
 										   flags);
+#ifdef HAVE_OPENGL
 		}
 		else
 		{
 			passed_shader = true;
 		}
+#endif
 	}
 //#endif
 

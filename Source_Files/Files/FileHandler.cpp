@@ -753,7 +753,11 @@ bool FileSpecifier::SetNameWithPath(const char* NameWithPath, const DirectorySpe
 
 void FileSpecifier::SetTempName(const FileSpecifier& other)
 {
+#ifdef __ANDROID__
+	name = other.name;
+#else
 	name = boost::filesystem::unique_path(other.name + "%%%%%%").string();
+#endif
 }
 
 // Get last element of path

@@ -20,6 +20,7 @@ LUA_SAVED_OBJECTS.CPP
 	Implements the Lua saved map objects classes
 */
 
+#include "world.h"
 #include "lua_monsters.h"
 #include "lua_objects.h"
 #include "lua_player.h"

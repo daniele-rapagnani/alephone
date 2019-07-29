@@ -110,6 +110,7 @@ static inline float MIX(float start, float end, float factor)
 
 void mouse_idle(short type)
 {
+#ifndef __ANDROID__
 	if (mouse_active) {
 #ifdef __APPLE__
 		// In raw mode, get unaccelerated deltas from HID system
@@ -149,6 +150,7 @@ void mouse_idle(short type)
 		// Push mouselook delta
 		mouselook_delta = {dyaw, dpitch};
 	}
+#endif
 }
 
 fixed_yaw_pitch pull_mouselook_delta()
@@ -162,6 +164,7 @@ fixed_yaw_pitch pull_mouselook_delta()
 void
 mouse_buttons_become_keypresses(Uint8* ioKeyMap)
 {
+#ifndef __ANDROID__
 		uint8 buttons = SDL_GetMouseState(NULL, NULL);
 		uint8 orig_buttons = buttons;
 		buttons &= button_mask;				// Mask out disabled buttons
@@ -175,6 +178,7 @@ mouse_buttons_become_keypresses(Uint8* ioKeyMap)
 		snapshot_delta_scrollwheel = 0;
 
         button_mask |= ~orig_buttons;		// A button must be released at least once to become enabled
+#endif
 }
 
 /*

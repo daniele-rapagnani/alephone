@@ -1,0 +1,31 @@
+
+add_library(
+        renderother STATIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/ChaseCam.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/computer_interface.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/fades.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/FontHandler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/game_window.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/HUDRenderer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/HUDRenderer_OGL.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/HUDRenderer_SW.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/HUDRenderer_Lua.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/images.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/motion_sensor.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Image_Blitter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/IMG_savepng.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/OGL_Blitter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Shape_Blitter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/OGL_LoadScreen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/overhead_map.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/OverheadMap_OGL.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/OverheadMapRenderer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/OverheadMap_SDL.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/screen_drawing.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/sdl_fonts.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/sdl_resize.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/TextLayoutHelper.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/TextStrings.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/ViewControl.cpp
+)
