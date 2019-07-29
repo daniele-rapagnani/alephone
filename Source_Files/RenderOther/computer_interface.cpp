@@ -119,6 +119,10 @@ Jan 25, 2002 (Br'fin (Jeremy Parsons)):
 #include "images.h"
 #include "Packing.h"
 
+#ifdef __ANDROID__
+#include "touch.h"
+#endif
+
 // MH: Lua scripting
 #include "lua_script.h"
 
@@ -594,7 +598,7 @@ void enter_computer_interface(
 	next_terminal_group(player_index, terminal_text);
 }
 
-/*  Assumes ¶t==1 tick */
+/*  Assumes ï¿½t==1 tick */
 void update_player_for_terminal_mode(
 	short player_index)
 {
@@ -778,6 +782,11 @@ uint32 build_terminal_action_flags(
 		if (keymap[key->keycode]) raw_flags |= key->action_flag;
 		key++;
 	}
+
+#ifdef __ANDROID__
+	uint32 touchflags = process_touches_terminal();
+	raw_flags |= touchflags;
+#endif
 
 	/* Only catch the key the first time. */
 	flags= raw_flags^terminal->last_action_flag;

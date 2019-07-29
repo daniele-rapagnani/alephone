@@ -126,6 +126,10 @@
 
 #include "shell_options.h"
 
+#ifdef __ANDROID__
+#include "touch.h"
+#endif
+
 // LP addition: whether or not the cheats are active
 // Defined in shell_misc.cpp
 extern bool CheatsActive;
@@ -538,6 +542,7 @@ static void initialize_application(void)
 	initialize_joystick();
 	initialize_gamma();
 	alephone::Screen::instance()->Initialize(&graphics_preferences->screen_mode);
+    initialize_touch({});
 	initialize_marathon();
 	initialize_screen_drawing();
 	initialize_dialogs();
@@ -1032,6 +1037,7 @@ static void handle_game_key(const SDL_Event &event)
 		}
 		else if (sc == SDL_SCANCODE_F3) // Resolution toggle
 		{
+#ifdef HAVE_OPENGL
 			if (!OGL_IsActive()) {
 				PlayInterfaceButtonSound(Sound_ButtonSuccess());
 				if (graphics_preferences->screen_mode.high_resolution) {
@@ -1045,6 +1051,7 @@ static void handle_game_key(const SDL_Event &event)
 				}
 				changed_screen_mode = changed_prefs = true;
 			} else
+#endif
 				PlayInterfaceButtonSound(Sound_ButtonFailure());
 		}
 		else if (sc == SDL_SCANCODE_F4)		// Reset OpenGL textures
@@ -1294,6 +1301,19 @@ static void process_game_key(const SDL_Event &event)
 static void process_event(const SDL_Event &event)
 {
 	switch (event.type) {
+#ifdef __ANDROID__
+	case SDL_FINGERDOWN:
+		add_touch(event.tfinger.fingerId);
+
+	case SDL_FINGERMOTION:
+	    move_touch_normalized(event.tfinger.fingerId, event.tfinger.x, event.tfinger.y);
+		break;
+
+	case SDL_FINGERUP:
+		remove_touch(event.tfinger.fingerId);
+		break;
+
+#endif
 	case SDL_MOUSEMOTION:
 		if (get_game_state() == _game_in_progress)
 		{
@@ -1333,7 +1353,7 @@ static void process_event(const SDL_Event &event)
 		else
 			process_screen_click(event);
 		break;
-	
+
 	case SDL_CONTROLLERBUTTONDOWN:
 		joystick_button_pressed(event.cbutton.which, event.cbutton.button, true);
 		SDL_Event e2;

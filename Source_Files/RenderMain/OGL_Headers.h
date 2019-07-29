@@ -34,10 +34,13 @@
 #define GL_GLEXT_PROTOTYPES 1
 #endif
 
+#ifdef HAVE_OPENGL
 #include <SDL_opengl.h>
+#endif
 
 #if defined (__APPLE__) && defined(__MACH__)
 #include <OpenGL/glu.h>
+#elif defined(__ANDROID__)
 #else
 #include <GL/glu.h>
 #endif

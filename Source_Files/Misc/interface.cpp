@@ -23,7 +23,7 @@
 
 	Friday, July 8, 1994 2:32:44 PM (alain)
 		All old code in here is obsolete. This now has interface for the top-level
-		interface (Begin Game, etcÉ)
+		interface (Begin Game, etcï¿½)
 	Saturday, September 10, 1994 12:45:48 AM  (alain)
 		the interface gutted again. just the stuff that handles the menu though, the rest stayed
 		the same.
@@ -840,7 +840,7 @@ bool join_networked_resume_game()
                         }
                         else
                         {
-                                /* Tell the user theyÕre screwed when they try to leave this level. */
+                                /* Tell the user theyï¿½re screwed when they try to leave this level. */
                                 // ZZZ: should really issue a different warning since the ramifications are different
                                 alert_user(infoError, strERRORS, cantFindMap, 0);
         
@@ -1051,7 +1051,9 @@ void pause_game(
 	void)
 {
 	stop_fade();
+#ifdef HAVE_OPENGL
 	if (!OGL_IsActive() || !(TEST_FLAG(Get_OGL_ConfigureData().Flags,OGL_Flag_Fader)))
+#endif
 		set_fade_effect(NONE);
 	darken_world_window();
 	set_keyboard_controller_status(false);
@@ -1062,10 +1064,12 @@ void resume_game(
 	void)
 {
 	hide_cursor();
+#ifdef HAVE_OPENGL
 	if (!OGL_IsActive() || !(TEST_FLAG(Get_OGL_ConfigureData().Flags,OGL_Flag_Fader)))
 		SetFadeEffectDelay(TICKS_PER_SECOND/2);
 	if (OGL_IsActive())
 		OGL_Blitter::BoundScreen(true);
+#endif
 	validate_world_window();
 	set_keyboard_controller_status(true);
 }
@@ -1209,7 +1213,7 @@ bool idle_game_state(uint32 time)
 		game_state.last_ticks_on_idle= machine_tick_count();
 	}
 
-	/* if weÕre not paused and thereÕs something to draw (i.e., anything different from
+	/* if weï¿½re not paused and thereï¿½s something to draw (i.e., anything different from
 		last time), render a frame */
 	if(game_state.state==_game_in_progress)
 	{
@@ -1405,8 +1409,10 @@ void do_menu_item_command(
 	
 						if(really_wants_to_quit)
 						{
+#ifdef HAVE_OPENGL
 							// Rhys Hill fix for crash when quitting OpenGL
 							if (!OGL_IsActive())
+#endif
 								render_screen(0); /* Get rid of hole.. */
 							set_game_state(_close_game);
 						}
@@ -2253,7 +2259,9 @@ static void start_game(
 		L_Call_HUDInit();
 	
 	// LP: this is in case we are starting underneath a liquid
+#ifdef HAVE_OPENGL
 	if (!OGL_IsActive() || !(TEST_FLAG(Get_OGL_ConfigureData().Flags,OGL_Flag_Fader)))
+#endif
 	{
 		set_fade_effect(NONE);
 		SetFadeEffectDelay(TICKS_PER_SECOND/2);
