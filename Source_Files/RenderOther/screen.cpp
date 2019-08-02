@@ -213,14 +213,27 @@ void Screen::Initialize(screen_mode_data* mode)
 		world_view->tunnel_vision_active = false;
 		
 		m_modes.clear();
-		SDL_DisplayMode desktop;
+
+        SDL_DisplayMode desktop;
 		if (SDL_GetDesktopDisplayMode(0, &desktop) == 0)
-		{
+        {
+#ifdef __ANDROID__
+		    // Work-around to avoid displays with high PPIs
+		    // from clogging the CPU when using the software
+		    // rasterizer
+
+            if (desktop.w >= 1280)
+            {
+                desktop.w /= 2;
+                desktop.h /= 2;
+            }
+#endif
 			if (desktop.w >= 640 && desktop.h >= 480)
 			{
 				m_modes.push_back(std::pair<int, int>(desktop.w, desktop.h));
 			}
 		}
+
 		if (m_modes.empty())
 		{
 			// assume a decent screen size

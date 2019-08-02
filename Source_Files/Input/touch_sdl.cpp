@@ -61,7 +61,7 @@ void move_touch_normalized(Uint8 touchId, float x, float y)
     double screenX = x * wwidth;
     double screenY = y * wheight;
 
-    double xScale = virtual_screen_size.w / wwidth;
+    double xScale = static_cast<double>(virtual_screen_size.w) / wwidth;
 
     screenX += ((wwidth * xScale) - wwidth) * 0.5;
 
