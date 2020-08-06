@@ -309,7 +309,7 @@ public:
 	// hide extensions known to Aleph One
 	static std::string HideExtension(const std::string& filename);
 	
-	const char *GetPath(void) const {return name.c_str();}
+	const char *GetPath(void) const { return name.c_str(); }
 
 	FileSpecifier();
 	FileSpecifier(const string &s) : name(s), err(0) {canonicalize_path();}
