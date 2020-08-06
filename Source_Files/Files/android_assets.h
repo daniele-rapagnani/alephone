@@ -7,6 +7,7 @@
 
 #include <jni.h>
 #include <android/asset_manager.h>
+#include <string>
 
 namespace android_assets {
 
@@ -18,6 +19,11 @@ JNIEXPORT
 void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(JNIEnv *, jclass, jobject);
 
 }
+
+bool install_to_internal_storage(
+    const std::string& path,
+    const std::string& toPath = ""
+);
 
 } // android_assets
 

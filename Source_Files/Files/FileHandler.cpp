@@ -51,6 +51,7 @@
 
 #ifdef __ANDROID__
 #include "android_assets.h"
+#include <dirent.h>
 #endif
 
 #ifdef HAVE_ZZIP
@@ -859,55 +860,64 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 	vec.clear();
 
 #ifdef __ANDROID__
-    assert(android_assets::asset_manager);
+    {
+        assert(android_assets::asset_manager);
 
-    AAssetDir* d = AAssetManager_openDir(android_assets::asset_manager, GetPath());
+        std::string path = GetPath();
 
-    const char* de = AAssetDir_getNextFileName(d);
-
-    while (de) {
-        FileSpecifier full_path = this->name;
-        full_path += de;
-
-        if (de[0] != '.')
-        {
-            AAssetDir* dirCheck = AAssetManager_openDir(android_assets::asset_manager, full_path.GetPath());
-            const char* nextName = AAssetDir_getNextFileName(dirCheck);
-
-            if (nextName)
-            {
-                vec.push_back(dir_entry(de, 0, true, false));
-
-                if (dirCheck)
-                {
-                    AAssetDir_close(dirCheck);
-                    dirCheck = nullptr;
-                }
-            }
-            else
-            {
-                AAsset* asset = AAssetManager_open(android_assets::asset_manager, full_path.GetPath(), AASSET_MODE_UNKNOWN);
-
-                if (!asset)
-                {
-                    err = 1;
-                    return false;
-                }
-
-                off_t size = AAsset_getLength(asset);
-
-                vec.push_back(dir_entry(de, size, false, false));
-
-                AAsset_close(asset);
-            }
+        if (path == ".") {
+            path = "";
         }
 
-        de = AAssetDir_getNextFileName(d);
-    }
+        AAssetDir *ad = AAssetManager_openDir(android_assets::asset_manager, path.c_str());
 
-    AAssetDir_close(d);
-    err = 0;
-#else
+        const char *ade = AAssetDir_getNextFileName(ad);
+
+        while (ade) {
+            FileSpecifier full_path = this->name;
+            full_path += ade;
+
+            if (ade[0] != '.') {
+                AAssetDir *dirCheck = AAssetManager_openDir(android_assets::asset_manager,
+                                                            full_path.GetPath());
+                const char *nextName = AAssetDir_getNextFileName(dirCheck);
+
+                if (nextName) {
+                    vec.push_back(dir_entry(ade, 0, true, false));
+
+                    if (dirCheck) {
+                        AAssetDir_close(dirCheck);
+                        dirCheck = nullptr;
+                    }
+                } else {
+                    AAsset *asset = AAssetManager_open(android_assets::asset_manager,
+                                                       full_path.GetPath(), AASSET_MODE_UNKNOWN);
+
+                    if (!asset) {
+                        err = 1;
+                        return false;
+                    }
+
+                    off_t size = AAsset_getLength(asset);
+
+                    vec.push_back(dir_entry(ade, size, false, false));
+
+                    AAsset_close(asset);
+                }
+            }
+
+            ade = AAssetDir_getNextFileName(ad);
+        }
+
+        AAssetDir_close(ad);
+
+        if (!vec.empty()) {
+            err = 0;
+            return true;
+        }
+    }
+#endif
+
 	DIR *d = opendir(GetPath());
 
     if (d == NULL) {
@@ -928,7 +938,6 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 	}
 	closedir(d);
 	err = 0;
-#endif
 
 	return true;
 }

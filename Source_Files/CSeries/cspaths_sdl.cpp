@@ -26,6 +26,10 @@
 #include "confpaths.h"
 #endif
 
+#ifdef __ANDROID__
+#include <SDL.h>
+#endif
+
 #if defined(__APPLE__) && defined(__MACH__)
 
 char get_path_list_separator()
@@ -171,7 +175,13 @@ char get_path_list_separator()
 static std::string _get_local_data_path()
 {
 #ifdef __ANDROID__
-	return ".";
+	static std::string path;
+
+	if (path.empty()) {
+		path = SDL_GetPrefPath("alephone", get_application_identifier().c_str());
+	}
+
+	return path;
 #else
 	static std::string local_dir = "";
 	if (local_dir.empty())
@@ -202,6 +212,9 @@ std::string get_data_path(CSPathType type)
 			break;
 		case kPathLegacyData:
 		case kPathBundleData:
+#ifdef __ANDROID__
+            return ".";
+#endif
 		case kPathLegacyPreferences:
 			// not applicable
 			break;
