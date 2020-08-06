@@ -171,7 +171,7 @@ char get_path_list_separator()
 static std::string _get_local_data_path()
 {
 #ifdef __ANDROID__
-	return "/sdcard/alephone";
+	return ".";
 #else
 	static std::string local_dir = "";
 	if (local_dir.empty())

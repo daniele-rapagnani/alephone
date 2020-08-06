@@ -4,6 +4,7 @@ add_library(
         ${CMAKE_CURRENT_SOURCE_DIR}/AStream.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/crc.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/FileHandler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/android_assets.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/find_files_sdl.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/game_wad.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/import_definitions.cpp

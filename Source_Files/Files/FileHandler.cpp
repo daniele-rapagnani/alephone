@@ -49,6 +49,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __ANDROID__
+#include "android_assets.h"
+#endif
+
 #ifdef HAVE_ZZIP
 #include <zzip/lib.h>
 #include "SDL_rwops_zzip.h"
@@ -427,8 +431,20 @@ bool FileSpecifier::Exists()
 {
 	// Check whether the file is readable
 	err = 0;
+
+#ifdef __ANDROID__
+	{
+		SDL_RWops* io = SDL_RWFromFile(GetPath(), "rb");
+
+		if (!io)
+		{
+			err = EPERM;
+		}
+	}
+#else
 	if (access(GetPath(), R_OK) < 0)
 		err = errno;
+#endif
 	
 #ifdef HAVE_ZZIP
 	if (err)
@@ -813,7 +829,13 @@ void FileSpecifier::FromDirectory(DirectorySpecifier &Dir)
 // Canonicalize path
 void FileSpecifier::canonicalize_path(void)
 {
-#if !defined(__WIN32__)
+#ifdef __ANDROID__
+    // Android assets do not support "./" paths.
+    if (name.substr(0, 2) == "./")
+    {
+        name = name.substr(2);
+    }
+#elif !defined(__WIN32__)
 
 	// Replace multiple consecutive '/'s by a single '/'
 	while (true) {
@@ -836,9 +858,59 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 {
 	vec.clear();
 
+#ifdef __ANDROID__
+    assert(android_assets::asset_manager);
+
+    AAssetDir* d = AAssetManager_openDir(android_assets::asset_manager, GetPath());
+
+    const char* de = AAssetDir_getNextFileName(d);
+
+    while (de) {
+        FileSpecifier full_path = this->name;
+        full_path += de;
+
+        if (de[0] != '.')
+        {
+            AAssetDir* dirCheck = AAssetManager_openDir(android_assets::asset_manager, full_path.GetPath());
+            const char* nextName = AAssetDir_getNextFileName(dirCheck);
+
+            if (nextName)
+            {
+                vec.push_back(dir_entry(de, 0, true, false));
+
+                if (dirCheck)
+                {
+                    AAssetDir_close(dirCheck);
+                    dirCheck = nullptr;
+                }
+            }
+            else
+            {
+                AAsset* asset = AAssetManager_open(android_assets::asset_manager, full_path.GetPath(), AASSET_MODE_UNKNOWN);
+
+                if (!asset)
+                {
+                    err = 1;
+                    return false;
+                }
+
+                off_t size = AAsset_getLength(asset);
+
+                vec.push_back(dir_entry(de, size, false, false));
+
+                AAsset_close(asset);
+            }
+        }
+
+        de = AAssetDir_getNextFileName(d);
+    }
+
+    AAssetDir_close(d);
+    err = 0;
+#else
 	DIR *d = opendir(GetPath());
 
-	if (d == NULL) {
+    if (d == NULL) {
 		err = errno;
 		return false;
 	}
@@ -856,6 +928,8 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 	}
 	closedir(d);
 	err = 0;
+#endif
+
 	return true;
 }
 
