@@ -128,6 +128,7 @@
 
 #ifdef __ANDROID__
 #include "touch.h"
+#include "android_assets.h"
 #endif
 
 // LP addition: whether or not the cheats are active
@@ -454,6 +455,15 @@ static void initialize_application(void)
 		fprintf(stderr, "Can't find required text strings (missing MML?).\n");
 		exit(1);
 	}
+
+#ifdef __ANDROID__
+	if (!android_assets::install_to_internal_storage(
+	        getcstr(temporary, strFILENAMES, filenamePREFERENCES)
+	))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Can't install preferences to internal storage");
+    }
+#endif
 	
 	// Check for presence of files (one last chance to change data_search_path)
 	if (!have_default_files()) {

@@ -3,6 +3,7 @@
 //
 
 #include "android_assets.h"
+#include "FileHandler.h"
 
 #include <android/asset_manager_jni.h>
 
@@ -18,6 +19,26 @@ void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(
 )
 {
     asset_manager = AAssetManager_fromJava(env, am);
+}
+
+bool install_to_internal_storage(
+    const std::string& path,
+    const std::string& toPath /* = "" */
+)
+{
+    std::string dstPath = toPath.empty() ? path : toPath;
+
+    FileSpecifier srcFs(path);
+    FileSpecifier dstFs;
+    dstFs.SetToLocalDataDir();
+    dstFs += dstPath;
+
+    if (dstFs.Exists())
+    {
+        return true;
+    }
+
+    return dstFs.CopyContents(srcFs);
 }
 
 } // namespace android_assets
