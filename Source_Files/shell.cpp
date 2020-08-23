@@ -389,6 +389,10 @@ static void initialize_application(void)
 	SDL_setenv("SDL_AUDIODRIVER", "directsound", 0);
 #endif
 
+#if defined(__ANDROID__)
+    android_assets::BakedFilesystem::instance().load("__baked_fs");
+#endif
+
 	// Initialize SDL
 	int retval = SDL_Init(SDL_INIT_VIDEO |
 						  (option_nosound ? 0 : SDL_INIT_AUDIO) |
