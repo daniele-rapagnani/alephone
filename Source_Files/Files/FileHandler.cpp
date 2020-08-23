@@ -901,55 +901,19 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 
 #ifdef __ANDROID__
     {
-        assert(android_assets::asset_manager);
+        using Node = const android_assets::BakedFilesystem::Node;
 
-        std::string path = GetPath();
+        const Node* dir = android_assets::BakedFilesystem::instance().get_file(GetPath());
 
-        if (path == ".") {
-            path = "";
-        }
+        if (dir && dir->directory)
+		{
+        	std::vector<const Node*> files = dir->get_children();
 
-        AAssetDir *ad = AAssetManager_openDir(android_assets::asset_manager, path.c_str());
-
-        const char *ade = AAssetDir_getNextFileName(ad);
-
-        while (ade) {
-            FileSpecifier full_path = this->name;
-            full_path += ade;
-
-            if (ade[0] != '.') {
-                AAssetDir *dirCheck = AAssetManager_openDir(android_assets::asset_manager,
-                                                            full_path.GetPath());
-                const char *nextName = AAssetDir_getNextFileName(dirCheck);
-
-                if (nextName) {
-                    vec.push_back(dir_entry(ade, 0, true, false));
-
-                    if (dirCheck) {
-                        AAssetDir_close(dirCheck);
-                        dirCheck = nullptr;
-                    }
-                } else {
-                    AAsset *asset = AAssetManager_open(android_assets::asset_manager,
-                                                       full_path.GetPath(), AASSET_MODE_UNKNOWN);
-
-                    if (!asset) {
-                        err = 1;
-                        return false;
-                    }
-
-                    off_t size = AAsset_getLength(asset);
-
-                    vec.push_back(dir_entry(ade, size, false, false));
-
-                    AAsset_close(asset);
-                }
-            }
-
-            ade = AAssetDir_getNextFileName(ad);
-        }
-
-        AAssetDir_close(ad);
+        	for (const Node* n : files)
+			{
+				vec.push_back(dir_entry(n->name, n->size, n->directory, false));
+			}
+		}
 
         if (!vec.empty()) {
             err = 0;
