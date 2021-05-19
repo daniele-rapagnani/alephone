@@ -1435,6 +1435,15 @@ static void process_event(const SDL_Event &event)
 		break;
 			
 	case SDL_KEYDOWN:
+#ifdef __ANDROID__
+        if (event.key.keysym.sym == SDLK_AC_BACK)
+        {
+            SDL_Event e2 = {};
+            e2.type = SDL_QUIT;
+            process_event(e2);
+            return;
+        }
+#endif
 		process_game_key(event);
 		break;
 
