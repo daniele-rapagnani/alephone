@@ -500,7 +500,6 @@ bool FileSpecifier::Exists()
 #endif
 	if (!access_ok)
 		err = errno;
-#endif
 	
 #ifdef HAVE_ZZIP
 	if (err)
