@@ -220,6 +220,11 @@ std::vector<const BakedFilesystem::Node*> BakedFilesystem::Node::get_children() 
 {
     std::vector<const BakedFilesystem::Node*> children;
 
+    if (!this->childrenStart || !this->childrenEnd)
+    {
+        return children;
+    }
+
     for (const Node* it = this->childrenStart; it <= this->childrenEnd; ++it)
     {
         if (it->pathDepth == this->pathDepth + 1)
@@ -282,9 +287,11 @@ bool BakedFilesystem::load(const std::string& bakedListFile)
     dirsStack.push(&this->nodes[0]);
 
     dirsStack.top()->path = ".";
-    dirsStack.top()->pathDepth = 0;
+    dirsStack.top()->pathDepth = 1;
     dirsStack.top()->directory = true;
     dirsStack.top()->size = 0;
+
+    this->tree["."] = dirsStack.top();
 
     for (size_t i = 1; i < nodesCount; i++)
     {
@@ -319,19 +326,38 @@ bool BakedFilesystem::load(const std::string& bakedListFile)
     }
 
     assert(!dirsStack.empty());
-    dirsStack.top()->childrenEnd = &(this->nodes.back());
+
+    if (this->nodes.size() > 1)
+    {
+        dirsStack.top()->childrenStart =  &(this->nodes[1]);
+        dirsStack.top()->childrenEnd = &(this->nodes.back());
+    }
 
     return true;
 }
 
 const BakedFilesystem::Node* BakedFilesystem::get_file(const std::string& path) const
 {
-    if (this->tree.find(path) == this->tree.end())
+    std::string realPath = path;
+
+    if (realPath.empty())
+    {
+        realPath = "/";
+    }
+    else if (
+        (realPath.size() == 1 && realPath[0] != '.' && realPath[0] != '/')
+        || (realPath.size() > 1 && (realPath[0] != '/' && realPath.substr(0, 2) != "./"))
+    )
+    {
+        realPath = "./" + realPath;
+    }
+
+    if (this->tree.find(realPath) == this->tree.end())
     {
         return nullptr;
     }
 
-    return this->tree.at(path);
+    return this->tree.at(realPath);
 }
 
 } // namespace android_assets
