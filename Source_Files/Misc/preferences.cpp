@@ -100,6 +100,8 @@ May 22, 2003 (Woody Zenfell):
 #include <sstream>
 #include <boost/algorithm/hex.hpp>
 
+#include "shell_options.h"
+
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -107,10 +109,11 @@ May 22, 2003 (Woody Zenfell):
 #ifdef __WIN32__
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h> // for GetUserName()
+#include <lmcons.h>
 #endif
 
 // 8-bit support is still here if you undefine this, but you'll need to fix it
-#define TRUE_COLOR_ONLY 1
+// #define TRUE_COLOR_ONLY 1
 
 using namespace alephone;
 
@@ -188,12 +191,10 @@ static std::string get_name_from_system()
 
 #elif defined(__WIN32__)
 
-	char login[17];
-	DWORD len = 17;
-
-	bool hasName = (GetUserName((LPSTR)login, &len) == TRUE);
-	if (hasName && strpbrk(login, "\\/:*?\"<>|") == NULL) // Ignore illegal names
-		return login;
+	wchar_t wname[UNLEN + 1];
+	DWORD wname_n = UNLEN + 1;
+	if (GetUserNameW(wname, &wname_n))
+		return wide_to_utf8(wname);
 
 #else
 //#error get_name_from_system() not implemented for this platform
@@ -968,6 +969,18 @@ static const char *sw_sdl_driver_labels[5] = {
 	"Default", "None", "Direct3D", "OpenGL", NULL
 };
 
+
+static const char* ephemera_quality_labels[5] = {
+	"Off", "Low", "Medium", "High", "Ultra"
+};
+
+static const char *fps_target_labels[] = {
+	"30", "60 (interpolated)", "120 (interpolated)", "Unlimited (interpolated)", NULL
+};
+static const int16_t fps_target_values[] = {
+	30, 60, 120, 0
+};
+
 static const char *gamma_labels[9] = {
 	"Darkest", "Darker", "Dark", "Normal", "Light", "Really Light", "Even Lighter", "Lightest", NULL
 };
@@ -1039,10 +1052,14 @@ static void software_rendering_options_dialog(void* arg)
 	table->dual_add(sw_alpha_blending_w->label("Transparent Liquids"), d);
 	table->dual_add(sw_alpha_blending_w, d);
 
+	w_select* ephemera_quality_w = new w_select(graphics_preferences->ephemera_quality, ephemera_quality_labels);
+	table->dual_add(ephemera_quality_w->label("Scripted Effects Quality"), d);
+	table->dual_add(ephemera_quality_w, d);
+
 	w_select *sw_driver_w = new w_select(graphics_preferences->software_sdl_driver, sw_sdl_driver_labels);
 	table->dual_add(sw_driver_w->label("Acceleration"), d);
 	table->dual_add(sw_driver_w, d);
-	
+
 	placer->add(table, true);
 
 	placer->add(new w_spacer(), true);
@@ -1085,6 +1102,12 @@ static void software_rendering_options_dialog(void* arg)
 		if (sw_driver_w->get_selection() != graphics_preferences->software_sdl_driver)
 		{
 			graphics_preferences->software_sdl_driver = sw_driver_w->get_selection();
+			changed = true;
+		}
+
+		if (ephemera_quality_w->get_selection() != graphics_preferences->ephemera_quality)
+		{
+			graphics_preferences->ephemera_quality = ephemera_quality_w->get_selection();
 			changed = true;
 		}
 		
@@ -1186,6 +1209,17 @@ static void graphics_dialog(void *arg)
 	table->dual_add(gamma_w->label("Brightness"), d);
 	table->dual_add(gamma_w, d);
 
+	w_select *fps_target_w = new w_select(0, fps_target_labels);
+	for (auto i = 0; fps_target_labels[i] != NULL; ++i)
+	{
+		if (fps_target_values[i] == graphics_preferences->fps_target)
+		{
+			fps_target_w->set_selection(i);
+		}
+	}
+	table->dual_add(fps_target_w->label("Framerate Target"), d);
+	table->dual_add(fps_target_w, d);
+
 	table->add_row(new w_spacer(), true);
 
 	w_toggle *fullscreen_w = new w_toggle(!graphics_preferences->screen_mode.fullscreen);
@@ -1283,7 +1317,14 @@ static void graphics_dialog(void *arg)
 		    graphics_preferences->screen_mode.gamma_level = gamma;
 		    changed = true;
 	    }
-        
+
+		auto fps_target = fps_target_values[fps_target_w->get_selection()];
+		if (fps_target != graphics_preferences->fps_target)
+		{
+			graphics_preferences->fps_target = fps_target;
+			changed = true;
+		}
+		
         bool fix_h_not_v = fixh_w->get_selection() == 0;
         if (fix_h_not_v != graphics_preferences->screen_mode.fix_h_not_v) {
             graphics_preferences->screen_mode.fix_h_not_v = fix_h_not_v;
@@ -1369,12 +1410,25 @@ static const char *channel_labels[] = {"1", "2", "4", "8", "16", "32", NULL};
 
 class w_volume_slider : public w_percentage_slider {
 public:
-	w_volume_slider(int vol) : w_percentage_slider(NUMBER_OF_SOUND_VOLUME_LEVELS, vol) {}
+	w_volume_slider(int vol) : w_percentage_slider(21, vol) {}
 	~w_volume_slider() {}
 
 	void item_selected(void)
 	{
-		SoundManager::instance()->TestVolume(selection, _snd_adjust_volume);
+		SoundManager::instance()->TestVolume((selection - 20) * 2, _snd_adjust_volume);
+	}
+};
+
+class w_music_slider : public w_slider {
+public:
+	w_music_slider(int sel) : w_slider(41, sel) {
+		init_formatted_value();
+	}
+
+	virtual std::string formatted_value() {
+		std::ostringstream ss;
+		ss << (selection * 200 / (num_items - 1)) << "%";
+		return ss.str();
 	}
 };
 
@@ -1418,11 +1472,11 @@ static void sound_dialog(void *arg)
 	table->dual_add(channels_w->label("Channels"), d);
 	table->dual_add(channels_w, d);
 
-	w_volume_slider *volume_w = new w_volume_slider(sound_preferences->volume);
-	table->dual_add(volume_w->label("Volume"), d);
+	w_volume_slider *volume_w = new w_volume_slider(static_cast<int>(sound_preferences->volume_db / 2 + 20));
+	table->dual_add(volume_w->label("Master Volume"), d);
 	table->dual_add(volume_w, d);
 
-	w_slider *music_volume_w = new w_percentage_slider(NUMBER_OF_SOUND_VOLUME_LEVELS, sound_preferences->music);
+	w_slider *music_volume_w = new w_music_slider(sound_preferences->music_db + 20);
 	table->dual_add(music_volume_w->label("Music Volume"), d);
 	table->dual_add(music_volume_w, d);
 
@@ -1484,15 +1538,15 @@ static void sound_dialog(void *arg)
 			changed = true;
 		}
 
-		int volume = volume_w->get_selection();
-		if (volume != sound_preferences->volume) {
-			sound_preferences->volume = volume;
+		float volume_db = (volume_w->get_selection() - 20) * 2;
+		if (volume_db != sound_preferences->volume_db) {
+			sound_preferences->volume_db = volume_db;
 			changed = true;
 		}
 
-		int music_volume = music_volume_w->get_selection();
-		if (music_volume != sound_preferences->music) {
-			sound_preferences->music = music_volume;
+		float music_db = music_volume_w->get_selection() - 20;
+		if (music_db != sound_preferences->music_db) {
+			sound_preferences->music_db = music_db;
 			changed = true;
 		}
 
@@ -1659,8 +1713,38 @@ static key_binding_map default_shell_key_bindings = {
 	} },
 	{ 8, { SDL_SCANCODE_BACKSLASH
 	} },
-	{ 9, { SDL_SCANCODE_1
+	{ 9, { SDL_SCANCODE_N
 	} },
+};
+
+static const char* hotkey_action_name[NUMBER_OF_HOTKEYS] = {
+	"Hotkey 1",
+	"Hotkey 2",
+	"Hotkey 3",
+	"Hotkey 4",
+	"Hotkey 5",
+	"Hotkey 6",
+	"Hotkey 7",
+	"Hotkey 8",
+	"Hotkey 9",
+	"Hotkey 10",
+	"Hotkey 11",
+	"Hotkey 12",
+};
+
+static key_binding_map default_hotkey_bindings = {
+	{ 0, { SDL_SCANCODE_1 }},
+	{ 1, { SDL_SCANCODE_2 }},
+	{ 2, { SDL_SCANCODE_3 }},
+	{ 3, { SDL_SCANCODE_4 }},
+	{ 4, { SDL_SCANCODE_5 }},
+	{ 5, { SDL_SCANCODE_6 }},
+	{ 6, { SDL_SCANCODE_7 }},
+	{ 7, { SDL_SCANCODE_8 }},
+	{ 8, { SDL_SCANCODE_9 }},
+	{ 9, { SDL_SCANCODE_T }},
+	{ 10, { SDL_SCANCODE_G }},
+	{ 11, { SDL_SCANCODE_B }}
 };
 
 class w_prefs_key;
@@ -1669,6 +1753,7 @@ typedef std::multimap<int, w_prefs_key*> prefsKeyMap;
 typedef std::pair<int, w_prefs_key*> prefsKeyMapPair;
 static prefsKeyMap key_w;
 static prefsKeyMap shell_key_w;
+static prefsKeyMap hotkey_w;
 
 class w_prefs_key : public w_key {
 public:
@@ -1718,6 +1803,15 @@ public:
 		}
 		for (auto it = shell_key_w.begin(); it != shell_key_w.end(); ++it) {
 			if (it->second != this && it->second->get_key() == new_key) {
+				it->second->set_key(SDL_SCANCODE_UNKNOWN);
+				it->second->dirty = true;
+			}
+		}
+		
+		for (auto it = hotkey_w.begin(); it != hotkey_w.end(); ++it)
+		{
+			if (it->second != this && it->second->get_key() == new_key)
+			{
 				it->second->set_key(SDL_SCANCODE_UNKNOWN);
 				it->second->dirty = true;
 			}
@@ -1805,6 +1899,46 @@ static void load_default_keys(void *arg)
 		}
 	}
 
+	for (int i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		SDL_Scancode kcode = SDL_SCANCODE_UNKNOWN;
+		SDL_Scancode mcode = SDL_SCANCODE_UNKNOWN;
+		SDL_Scancode jcode = SDL_SCANCODE_UNKNOWN;
+		for (auto it = default_hotkey_bindings[i].begin(); it != default_hotkey_bindings[i].end(); ++it) {
+			SDL_Scancode code = *it;
+			if (code == SDL_SCANCODE_UNKNOWN)
+				continue;
+			switch (w_key::event_type_for_key(code)) {
+				case w_key::MouseButton:
+					mcode = code;
+					break;
+				case w_key::JoystickButton:
+					jcode = code;
+					break;
+				case w_key::KeyboardKey:
+				default:
+					kcode = code;
+					break;
+			}
+		}
+		auto range = hotkey_w.equal_range(i);
+		for (auto ik = range.first; ik != range.second; ++ik) {
+			w_prefs_key *pk = ik->second;
+			switch (pk->event_type) {
+				case w_key::MouseButton:
+					pk->set_key(mcode);
+					break;
+				case w_key::JoystickButton:
+					pk->set_key(jcode);
+					break;
+				case w_key::KeyboardKey:
+				default:
+					pk->set_key(kcode);
+					break;
+			}
+		}
+	}
+
 	dialog *d = (dialog *)arg;
 	d->draw();
 }
@@ -1815,6 +1949,10 @@ static void unset_scancode(SDL_Scancode code)
 		input_preferences->key_bindings[i].erase(code);
 	for (int i = 0; i < NUMBER_OF_SHELL_KEYS; ++i)
 		input_preferences->shell_key_bindings[i].erase(code);
+	for (int i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		input_preferences->hotkey_bindings[i].erase(code);
+	}
 }
 
 enum {
@@ -1840,7 +1978,7 @@ static void mouse_feel_details_changed(void *arg)
 	switch (mouse_feel_details_w->get_selection())
 	{
 		case 0:
-			mouse_raw_w->set_selection(0);
+			mouse_raw_w->set_selection(1);
 			mouse_accel_w->set_selection(1);
 			mouse_vertical_w->set_selection(1);
 			mouse_precision_w->set_selection(1);
@@ -1862,7 +2000,7 @@ static void update_mouse_feel_details(void *arg)
 	if (inside_callback)
 		return;
 	inside_callback = true;
-	if (mouse_raw_w->get_selection() == 0 &&
+	if (mouse_raw_w->get_selection() == 1 &&
 		mouse_accel_w->get_selection() == 1 &&
 		mouse_vertical_w->get_selection() == 1 &&
 		mouse_precision_w->get_selection() == 1)
@@ -1885,7 +2023,7 @@ static void update_mouse_feel_details(void *arg)
 
 static void update_mouse_feel(void *arg)
 {
-	if (input_preferences->raw_mouse_input == false &&
+	if (input_preferences->raw_mouse_input == true &&
 		input_preferences->mouse_accel_type == _mouse_accel_classic &&
 		input_preferences->classic_vertical_aim == true &&
 		input_preferences->extra_mouse_precision == false)
@@ -1911,8 +2049,8 @@ static bool apply_mouse_feel(int selection)
 	switch (selection)
 	{
 		case 0:
-			if (false != input_preferences->raw_mouse_input) {
-				input_preferences->raw_mouse_input = false;
+			if (true != input_preferences->raw_mouse_input) {
+				input_preferences->raw_mouse_input = true;
 				changed = true;
 			}
 			if (_mouse_accel_classic != input_preferences->mouse_accel_type) {
@@ -2152,6 +2290,7 @@ static void controls_dialog(void *arg)
 	// Clear array of key widgets (because w_prefs_key::set_key() scans it)
 	key_w.clear();
 	shell_key_w.clear();
+	hotkey_w.clear();
 
 	// Create dialog
 	dialog d;
@@ -2197,9 +2336,29 @@ static void controls_dialog(void *arg)
 		shell_key_w.insert(prefsKeyMapPair(i, new w_prefs_key(jcode, w_key::JoystickButton)));
 	}
 	
+	for (int i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		SDL_Scancode kcode = SDL_SCANCODE_UNKNOWN;
+		SDL_Scancode mcode = SDL_SCANCODE_UNKNOWN;
+		SDL_Scancode jcode = SDL_SCANCODE_UNKNOWN;
+		for (std::set<SDL_Scancode>::const_iterator bit = input_preferences->hotkey_bindings[i].begin(); bit != input_preferences->hotkey_bindings[i].end(); ++bit) {
+			SDL_Scancode code = *bit;
+			if (code >= AO_SCANCODE_BASE_JOYSTICK_BUTTON && code < (AO_SCANCODE_BASE_JOYSTICK_BUTTON + NUM_SDL_JOYSTICK_BUTTONS)) {
+				jcode = code;
+			} else if (code >= AO_SCANCODE_BASE_MOUSE_BUTTON && code < (AO_SCANCODE_BASE_MOUSE_BUTTON + NUM_SDL_MOUSE_BUTTONS)) {
+				mcode = code;
+			} else {
+				kcode = code;
+			}
+		}
+		hotkey_w.insert(prefsKeyMapPair(i, new w_prefs_key(kcode, w_key::KeyboardKey)));
+		hotkey_w.insert(prefsKeyMapPair(i, new w_prefs_key(mcode, w_key::MouseButton)));
+		hotkey_w.insert(prefsKeyMapPair(i, new w_prefs_key(jcode, w_key::JoystickButton)));
+	}
+	
 	tab_placer* tabs = new tab_placer();
 	
-	std::vector<std::string> labels = { "AIM", "MOVE", "ACTIONS", "INTERFACE", "OTHER" };
+	std::vector<std::string> labels = { "AIM", "MOVE", "ACTIONS", "HOTKEYS", "INTERFACE", "OTHER" };
 	w_tab *tab_w = new w_tab(labels, tabs);
 	
 	placer->dual_add(tab_w, d);
@@ -2410,6 +2569,36 @@ static void controls_dialog(void *arg)
 	actions->dual_add(new w_static_text("network play.  Turning it OFF will also disable"), d);
 	actions->dual_add(new w_static_text("film recording for single-player games."), d);
 
+	vertical_placer* hotkeys = new vertical_placer();
+	table_placer* hotkey_table = new table_placer(4, get_theme_space(ITEM_WIDGET), true);
+	hotkey_table->col_flags(0, placeable::kAlignRight);
+	hotkey_table->col_flags(1, placeable::kAlignLeft);
+	hotkey_table->col_flags(2, placeable::kAlignLeft);
+	hotkey_table->col_flags(3, placeable::kAlignLeft);
+	hotkey_table->add(new w_spacer(), true);
+	hotkey_table->dual_add(new w_label("Keyboard"), d);
+	hotkey_table->dual_add(new w_label("Mouse"), d);
+	hotkey_table->dual_add(new w_label("Controller"), d);
+
+	for (auto i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		if (i == 9)
+		{
+			hotkey_table->add_row(new w_spacer(), true);			
+		}
+		
+		hotkey_table->dual_add(new w_label(hotkey_action_name[i]), d);
+		auto range = hotkey_w.equal_range(i);
+		for (auto ik = range.first; ik != range.second; ++ik)
+		{
+			hotkey_table->dual_add(ik->second, d);
+		}
+	}
+	hotkeys->add(hotkey_table, true);
+
+	hotkeys->add(new w_spacer(), true);
+	hotkeys->dual_add(new w_static_text("Hotkeys 1-9 are used to switch weapons, but can be overriden by Lua scripts"), d);
+	hotkeys->dual_add(new w_static_text("Hotkeys 10-12 are reserved for Lua scripts"), d);
 
 	vertical_placer *iface = new vertical_placer();
 	table_placer *interface_table = new table_placer(4, get_theme_space(ITEM_WIDGET), true);
@@ -2518,6 +2707,7 @@ static void controls_dialog(void *arg)
 	tabs->add(look, true);
 	tabs->add(move, true);
 	tabs->add(actions, true);
+	tabs->add(hotkeys, true);
 	tabs->add(iface, true);
 	tabs->add(other, true);
 	placer->add(tabs, true);
@@ -2560,6 +2750,11 @@ static void controls_dialog(void *arg)
 			input_preferences->shell_key_bindings[i].clear();
 		}
 
+		for (int i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+		{
+			input_preferences->hotkey_bindings[i].clear();
+		}
+
 		for (auto it = key_w.begin(); it != key_w.end(); ++it) {
 			int i = it->first;
 			SDL_Scancode key = it->second->get_key();
@@ -2576,6 +2771,18 @@ static void controls_dialog(void *arg)
 			if (key != SDL_SCANCODE_UNKNOWN) {
 				unset_scancode(key);
 				input_preferences->shell_key_bindings[i].insert(key);
+				changed = true;
+			}
+		}
+
+		for (auto it = hotkey_w.begin(); it != hotkey_w.end(); ++it)
+		{
+			int i = it->first;
+			auto key = it->second->get_key();
+			if (key != SDL_SCANCODE_UNKNOWN)
+			{
+				unset_scancode(key);
+				input_preferences->hotkey_bindings[i].insert(key);
 				changed = true;
 			}
 		}
@@ -2984,12 +3191,33 @@ void read_preferences ()
 	FileSpecifier FileSpec;
 
 	FileSpec.SetToPreferencesDir();
-	FileSpec += getcstr(temporary, strFILENAMES, filenamePREFERENCES);
+	std::string name = getcstr(temporary, strFILENAMES, filenamePREFERENCES);
+	if (shell_options.editor)
+	{
+		// check for editor prefs
+		name += " Editor";
+	}
+	FileSpec += name;
 
 	OpenedFile OFile;
 	bool defaults = false;
 	bool opened = FileSpec.Open(OFile);
 
+	if (!opened && shell_options.editor)
+	{
+		// copy non-editor prefs
+		FileSpec.SetToPreferencesDir();
+		FileSpec += getcstr(temporary,strFILENAMES, filenamePREFERENCES);
+		opened = FileSpec.Open(OFile);
+	}
+
+	if (!opened) {
+		defaults = true;
+		FileSpec.SetNameWithPath("Scripts/Default Preferences.xml");
+		opened = FileSpec.Open(OFile);
+	}
+
+	// legacy defalt prefs
 	if (!opened) {
 		defaults = true;
 		FileSpec.SetNameWithPath(getcstr(temporary, strFILENAMES, filenamePREFERENCES));
@@ -3042,13 +3270,17 @@ void read_preferences ()
 			parse_error = true;
 		}
 	}
-	
-	if (!opened || parse_error)
+
+	if (defaults)
 	{
-		if (defaults)
+		if (parse_error)
+		{
 			alert_user(expand_app_variables("There were default preferences-file parsing errors (see $appLogFile$ for details)").c_str(), infoError);
-		else
-			alert_user(expand_app_variables("There were preferences-file parsing errors (see $appLogFile$ for details)").c_str(), infoError);
+		}
+	}
+	else if (!opened || parse_error)
+	{
+		alert_user(expand_app_variables("There were preferences-file parsing errors (see $appLogFile$ for details)").c_str(), infoError);
 	}
 
 	// Check on the read-in prefs
@@ -3090,6 +3322,7 @@ InfoTree graphics_preferences_tree()
 	root.put_attr("scmode_camera_bob", graphics_preferences->screen_mode.camera_bob);
 	root.put_attr("scmode_accel", graphics_preferences->screen_mode.acceleration);
 	root.put_attr("scmode_highres", graphics_preferences->screen_mode.high_resolution);
+	root.put_attr("scmode_draw_every_other_line", graphics_preferences->screen_mode.draw_every_other_line);
 	root.put_attr("scmode_fullscreen", graphics_preferences->screen_mode.fullscreen);
 	root.put_attr("scmode_bitdepth", graphics_preferences->screen_mode.bit_depth);
 	root.put_attr("scmode_gamma", graphics_preferences->screen_mode.gamma_level);
@@ -3097,6 +3330,7 @@ InfoTree graphics_preferences_tree()
 	root.put_attr("ogl_flags", graphics_preferences->OGL_Configure.Flags);
 	root.put_attr("software_alpha_blending", graphics_preferences->software_alpha_blending);
 	root.put_attr("software_sdl_driver", graphics_preferences->software_sdl_driver);
+	root.put_attr("fps_target", graphics_preferences->fps_target);
 	root.put_attr("anisotropy_level", graphics_preferences->OGL_Configure.AnisotropyLevel);
 	root.put_attr("multisamples", graphics_preferences->OGL_Configure.Multisamples);
 	root.put_attr("geforce_fix", graphics_preferences->OGL_Configure.GeForceFix);
@@ -3104,9 +3338,10 @@ InfoTree graphics_preferences_tree()
 	root.put_attr("gamma_corrected_blending", graphics_preferences->OGL_Configure.Use_sRGB);
 	root.put_attr("use_npot", graphics_preferences->OGL_Configure.Use_NPOT);
 	root.put_attr("double_corpse_limit", graphics_preferences->double_corpse_limit);
-	root.put_attr("hog_the_cpu", graphics_preferences->hog_the_cpu);
 	root.put_attr("movie_export_video_quality", graphics_preferences->movie_export_video_quality);
+	root.put_attr("movie_export_video_bitrate", graphics_preferences->movie_export_video_bitrate);
 	root.put_attr("movie_export_audio_quality", graphics_preferences->movie_export_audio_quality);
+	root.put_attr("scripted_effects_quality", graphics_preferences->ephemera_quality);
 	
 	root.add_color("void.color", graphics_preferences->OGL_Configure.VoidColor);
 
@@ -3178,20 +3413,49 @@ static const char *binding_shell_action_name[NUMBER_OF_SHELL_KEYS] = {
 	"inventory-left", "inventory-right", "switch-player-view", "volume-up", "volume-down",
 	"map-zoom-in", "map-zoom-out", "fps", "chat", "net-stats"
 };
+static const char *binding_hotkey_action_name[NUMBER_OF_HOTKEYS] = {
+	"hotkey-1", "hotkey-2", "hotkey-3", "hotkey-4", "hotkey-5", "hotkey-6", "hotkey-7", "hotkey-8", "hotkey-9", "hotkey-10", "hotkey-11", "hotkey-12"
+};
 static const char *binding_mouse_button_name[NUM_SDL_MOUSE_BUTTONS] = {
 	"mouse-left", "mouse-middle", "mouse-right", "mouse-x1", "mouse-x2",
 	"mouse-scroll-up", "mouse-scroll-down"
 };
-static const char *binding_joystick_button_name[NUM_SDL_JOYSTICK_BUTTONS] = {
-	"controller-a", "controller-b", "controller-x", "controller-y",
-	"controller-back", "controller-guide", "controller-start",
-	"controller-ls", "controller-rs", "controller-lb", "controller-rb",
-	"controller-up", "controller-down", "controller-left", "controller-right",
-	"controller-ls-right", "controller-ls-down", "controller-rs-right",
-	"controller-rs-down", "controller-lt", "controller-rt",
-	"controller-ls-left", "controller-ls-up", "controller-rs-left",
-	"controller-rs-up", "controller-lt-neg", "controller-rt-neg"
-};
+
+static const char* get_binding_joystick_button_name(int offset)
+{
+	static_assert(SDL_CONTROLLER_BUTTON_MAX <= 21 &&
+				  SDL_CONTROLLER_AXIS_MAX <= 12,
+				  "SDL changed the number of buttons/axes again!");
+
+	static const char* buttons[] = {
+		"controller-a", "controller-b", "controller-x", "controller-y",
+		"controller-back", "controller-guide", "controller-start",
+		"controller-ls", "controller-rs", "controller-lb", "controller-rb",
+		"controller-up", "controller-down", "controller-left",
+		"controller-right",
+		// new in SDL 2.0.14
+		"controller-misc1", "controller-paddle1", "controller-paddle2",
+		"controller-paddle3", "controller-paddle4",
+		"controller-touchpad-button",
+	};
+
+	static const char* axes[] = {
+		"controller-ls-right", "controller-ls-down", "controller-rs-right",
+		"controller-rs-down", "controller-lt", "controller-rt",
+		"controller-ls-left", "controller-ls-up", "controller-rs-left",
+		"controller-rs-up", "controller-lt-neg", "controller-rt-neg"
+	};
+
+	if (offset < SDL_CONTROLLER_BUTTON_MAX)
+	{
+		return buttons[offset];
+	}
+	else
+	{
+		return axes[offset - SDL_CONTROLLER_BUTTON_MAX];
+	}
+}
+
 static const int binding_num_scancodes = 285;
 static const char *binding_scancode_name[binding_num_scancodes] = {
 	"unknown", "unknown-1", "unknown-2", "unknown-3", "a",
@@ -3264,7 +3528,8 @@ static const char *binding_name_for_code(SDL_Scancode code)
 		return binding_mouse_button_name[i - AO_SCANCODE_BASE_MOUSE_BUTTON];
 	else if (i >= AO_SCANCODE_BASE_JOYSTICK_BUTTON &&
 			 i < (AO_SCANCODE_BASE_JOYSTICK_BUTTON + NUM_SDL_JOYSTICK_BUTTONS))
-		return binding_joystick_button_name[i - AO_SCANCODE_BASE_JOYSTICK_BUTTON];
+		return get_binding_joystick_button_name(i - AO_SCANCODE_BASE_JOYSTICK_BUTTON);
+
 	return "unknown";
 }
 
@@ -3282,19 +3547,25 @@ static SDL_Scancode code_for_binding_name(std::string name)
 	}
 	for (int i = 0; i < NUM_SDL_JOYSTICK_BUTTONS; ++i)
 	{
-		if (name == binding_joystick_button_name[i])
+		if (name == get_binding_joystick_button_name(i))
 			return static_cast<SDL_Scancode>(i + AO_SCANCODE_BASE_JOYSTICK_BUTTON);
 	}
 	return SDL_SCANCODE_UNKNOWN;
 }
 
-static int index_for_action_name(std::string name, bool& is_shell)
+enum class BindingType {
+	in_game,
+	shell,
+	hotkey
+};
+
+static int index_for_action_name(std::string name, BindingType& binding_type)
 {
 	for (int i = 0; i < NUM_KEYS; ++i)
 	{
 		if (name == binding_action_name[i])
 		{
-			is_shell = false;
+			binding_type = BindingType::in_game;
 			return i;
 		}
 	}
@@ -3302,7 +3573,15 @@ static int index_for_action_name(std::string name, bool& is_shell)
 	{
 		if (name == binding_shell_action_name[i])
 		{
-			is_shell = true;
+			binding_type = BindingType::shell;
+			return i;
+		}
+	}
+	for (int i = 0; i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		if (name == binding_hotkey_action_name[i])
+		{
+			binding_type = BindingType::hotkey;
 			return i;
 		}
 	}
@@ -3350,6 +3629,22 @@ InfoTree input_preferences_tree()
 			root.add_child("binding", key);
 		}
 	}
+
+	for (auto i = 0;i < NUMBER_OF_HOTKEYS; ++i)
+	{
+		for (auto code : input_preferences->hotkey_bindings[i])
+		{
+			if (code == SDL_SCANCODE_UNKNOWN)
+			{
+				continue;
+			}
+
+			InfoTree key;
+			key.put_attr("action", binding_hotkey_action_name[i]);
+			key.put_attr("pressed", binding_name_for_code(code));
+			root.add_child("binding", key);
+		}
+	}
 	
 	return root;
 }
@@ -3359,13 +3654,14 @@ InfoTree sound_preferences_tree()
 	InfoTree root;
 	
 	root.put_attr("channels", sound_preferences->channel_count);
-	root.put_attr("volume", sound_preferences->volume);
-	root.put_attr("music_volume", sound_preferences->music);
+	root.put_attr("volume_db", sound_preferences->volume_db);
+	root.put_attr("music_db", sound_preferences->music_db);
 	root.put_attr("flags", sound_preferences->flags);
 	root.put_attr("rate", sound_preferences->rate);
 	root.put_attr("samples", sound_preferences->samples);
 	root.put_attr("volume_while_speaking", sound_preferences->volume_while_speaking);
 	root.put_attr("mute_while_transmitting", sound_preferences->mute_while_transmitting);
+	root.put_attr("video_export_volume_db", sound_preferences->video_export_volume_db);
 	
 	return root;
 }
@@ -3471,7 +3767,13 @@ void write_preferences()
 	
 	FileSpecifier FileSpec;
 	FileSpec.SetToPreferencesDir();
-	FileSpec += getcstr(temporary, strFILENAMES, filenamePREFERENCES);
+
+	std::string name = getcstr(temporary, strFILENAMES, filenamePREFERENCES);
+	if (shell_options.editor)
+	{
+		name += " Editor";
+	}
+	FileSpec += name;
 	
 	try {
 		fileroot.save_xml(FileSpec);
@@ -3499,7 +3801,7 @@ static void default_graphics_preferences(graphics_preferences_data *preferences)
 	preferences->screen_mode.hud = true;
 	preferences->screen_mode.hud_scale_level = 0;
 	preferences->screen_mode.term_scale_level = 2;
-	preferences->screen_mode.translucent_map = true;
+	preferences->screen_mode.translucent_map = false;
 	preferences->screen_mode.acceleration = _opengl_acceleration;
 	preferences->screen_mode.high_resolution = true;
 	preferences->screen_mode.fullscreen = true;
@@ -3514,13 +3816,16 @@ static void default_graphics_preferences(graphics_preferences_data *preferences)
 #endif
 
 	preferences->double_corpse_limit= false;
-	preferences->hog_the_cpu = false;
 
 	preferences->software_alpha_blending = _sw_alpha_off;
 	preferences->software_sdl_driver = _sw_driver_default;
+	preferences->fps_target = 30;
 
 	preferences->movie_export_video_quality = 50;
 	preferences->movie_export_audio_quality = 50;
+	preferences->movie_export_video_bitrate = 0; // auto
+
+	preferences->ephemera_quality = _ephemera_medium;
 }
 
 static void default_network_preferences(network_preferences_data *preferences)
@@ -3569,7 +3874,8 @@ static void default_player_preferences(player_preferences_data *preferences)
 	obj_clear(*preferences);
 
 	preferences->difficulty_level= 2;
-	strncpy(preferences->name, get_name_from_system().c_str(), PREFERENCES_NAME_LENGTH+1);
+	strncpy(preferences->name, get_name_from_system().c_str(), PREFERENCES_NAME_LENGTH);
+	preferences->name[PREFERENCES_NAME_LENGTH] = '\0';
 	
 	// LP additions for new fields:
 	
@@ -3595,6 +3901,7 @@ static void default_input_preferences(input_preferences_data *preferences)
 	preferences->input_device= _mouse_yaw_pitch;
 	preferences->key_bindings = default_key_bindings;
 	preferences->shell_key_bindings = default_shell_key_bindings;
+	preferences->hotkey_bindings = default_hotkey_bindings;
 	
 	// LP addition: set up defaults for modifiers:
 	// interchange run and walk, but don't interchange swim and sink.
@@ -3969,6 +4276,7 @@ void parse_graphics_preferences(InfoTree root, std::string version)
 	root.read_attr("scmode_camera_bob", graphics_preferences->screen_mode.camera_bob);
 	root.read_attr("scmode_accel", graphics_preferences->screen_mode.acceleration);
 	root.read_attr("scmode_highres", graphics_preferences->screen_mode.high_resolution);
+	root.read_attr("scmode_draw_every_other_line", graphics_preferences->screen_mode.draw_every_other_line);
 	root.read_attr("scmode_fullscreen", graphics_preferences->screen_mode.fullscreen);
 	
 	root.read_attr("scmode_fix_h_not_v", graphics_preferences->screen_mode.fix_h_not_v);
@@ -3977,6 +4285,7 @@ void parse_graphics_preferences(InfoTree root, std::string version)
 	root.read_attr("ogl_flags", graphics_preferences->OGL_Configure.Flags);
 	root.read_attr("software_alpha_blending", graphics_preferences->software_alpha_blending);
 	root.read_attr("software_sdl_driver", graphics_preferences->software_sdl_driver);
+	root.read_attr("fps_target", graphics_preferences->fps_target);
 	root.read_attr("anisotropy_level", graphics_preferences->OGL_Configure.AnisotropyLevel);
 	root.read_attr("multisamples", graphics_preferences->OGL_Configure.Multisamples);
 	root.read_attr("geforce_fix", graphics_preferences->OGL_Configure.GeForceFix);
@@ -3984,10 +4293,11 @@ void parse_graphics_preferences(InfoTree root, std::string version)
 	root.read_attr("gamma_corrected_blending", graphics_preferences->OGL_Configure.Use_sRGB);
 	root.read_attr("use_npot", graphics_preferences->OGL_Configure.Use_NPOT);
 	root.read_attr("double_corpse_limit", graphics_preferences->double_corpse_limit);
-	root.read_attr("hog_the_cpu", graphics_preferences->hog_the_cpu);
 	root.read_attr_bounded<int16>("movie_export_video_quality", graphics_preferences->movie_export_video_quality, 0, 100);
 	root.read_attr_bounded<int16>("movie_export_audio_quality", graphics_preferences->movie_export_audio_quality, 0, 100);
-	
+	root.read_attr("movie_export_video_bitrate", graphics_preferences->movie_export_video_bitrate);
+
+	root.read_attr("scripted_effects_quality", graphics_preferences->ephemera_quality);
 	
 	BOOST_FOREACH(InfoTree vtree, root.children_named("void"))
 	{
@@ -4198,12 +4508,9 @@ void parse_input_preferences(InfoTree root, std::string version)
 	root.read_attr("controller_analog", input_preferences->controller_analog);
 	root.read_attr("controller_sensitivity", input_preferences->controller_sensitivity);
 	root.read_attr("controller_deadzone", input_preferences->controller_deadzone);
-	
+
 	// remove default key bindings the first time we see one from these prefs
-	bool seen_key[NUMBER_OF_KEYS];
-	memset(seen_key, 0, sizeof(seen_key));
-	bool seen_shell_key[NUMBER_OF_SHELL_KEYS];
-	memset(seen_shell_key, 0, sizeof(seen_shell_key));
+	std::set<std::pair<BindingType, int>> seen_key;
 	
 	// import old key bindings
 	BOOST_FOREACH(InfoTree key, root.children_named("sdl_key"))
@@ -4211,10 +4518,11 @@ void parse_input_preferences(InfoTree root, std::string version)
 		int16 index;
 		if (key.read_indexed("index", index, NUMBER_OF_KEYS))
 		{
-			if (!seen_key[index])
+			auto k = std::make_pair(BindingType::in_game, index);
+			if (seen_key.count(k) == 0)
 			{
 				input_preferences->key_bindings[index].clear();
-				seen_key[index] = true;
+				seen_key.insert(k);
 			}
 			int code;
 			if (key.read_attr("value", code))
@@ -4227,10 +4535,11 @@ void parse_input_preferences(InfoTree root, std::string version)
 		else if (key.read_indexed("index", index, NUMBER_OF_KEYS + NUMBER_OF_SHELL_KEYS))
 		{
 			int shell_index = index - NUMBER_OF_KEYS;
-			if (!seen_shell_key[shell_index])
+			auto k = std::make_pair(BindingType::shell, shell_index);
+			if (seen_key.count(k) == 0)
 			{
 				input_preferences->shell_key_bindings[shell_index].clear();
-				seen_shell_key[shell_index] = true;
+				seen_key.insert(k);
 			}
 			int code;
 			if (key.read_attr("value", code))
@@ -4248,31 +4557,36 @@ void parse_input_preferences(InfoTree root, std::string version)
 		if (key.read_attr("action", action_name) &&
 			key.read_attr("pressed", pressed_name))
 		{
+			BindingType binding_type;
 			bool shell = false;
-			int index = index_for_action_name(action_name, shell);
+			int index = index_for_action_name(action_name, binding_type);
 			if (index < 0)
 				continue;
 			SDL_Scancode code = code_for_binding_name(pressed_name);
-			if (shell)
+			key_binding_map* map;
+			
+			switch (binding_type)
 			{
-				if (!seen_shell_key[index])
-				{
-					input_preferences->shell_key_bindings[index].clear();
-					seen_shell_key[index] = true;
-				}
-				unset_scancode(code);
-				input_preferences->shell_key_bindings[index].insert(code);
+			case BindingType::in_game:
+				map = &input_preferences->key_bindings;
+				break;
+			case BindingType::shell:
+				map = &input_preferences->shell_key_bindings;
+				break;
+			case BindingType::hotkey:
+				map = &input_preferences->hotkey_bindings;
+				break;
 			}
-			else
+
+			auto k = std::make_pair(binding_type, index);
+			if (seen_key.count(k) == 0)
 			{
-				if (!seen_key[index])
-				{
-					input_preferences->key_bindings[index].clear();
-					seen_key[index] = true;
-				}
-				unset_scancode(code);
-				input_preferences->key_bindings[index].insert(code);
+				(*map)[index].clear();
+				seen_key.insert(k);
 			}
+
+			unset_scancode(code);
+			(*map)[index].insert(code);
 		}
 	}
 }
@@ -4280,13 +4594,49 @@ void parse_input_preferences(InfoTree root, std::string version)
 void parse_sound_preferences(InfoTree root, std::string version)
 {
 	root.read_attr("channels", sound_preferences->channel_count);
-	root.read_attr("volume", sound_preferences->volume);
-	root.read_attr("music_volume", sound_preferences->music);
+
+	if (!version.length() || version < "20200803")
+	{
+		int old_volume;
+		root.read_attr("volume", old_volume);
+		if (old_volume > 0)
+		{
+			sound_preferences->volume_db = 10.f * std::log10(static_cast<float>(old_volume) / NUMBER_OF_SOUND_VOLUME_LEVELS);
+		}
+		else
+		{
+			sound_preferences->volume_db = SoundManager::MINIMUM_VOLUME_DB;
+		}
+	}
+	else
+	{
+		root.read_attr("volume_db", sound_preferences->volume_db);
+	}
+
+	if (!version.length() || version < "20200803")
+	{
+		int old_music_volume;
+		root.read_attr("music_volume", old_music_volume);
+		if (old_music_volume > 0)
+		{
+			sound_preferences->music_db = 10.f * std::log10(static_cast<float>(old_music_volume) / NUMBER_OF_SOUND_VOLUME_LEVELS);
+		}
+		else
+		{
+			sound_preferences->music_db = SoundManager::MINIMUM_VOLUME_DB / 2;
+		}
+	}
+	else
+	{
+		root.read_attr("music_db", sound_preferences->music_db);
+	}
+
 	root.read_attr("flags", sound_preferences->flags);
 	root.read_attr("rate", sound_preferences->rate);
 	root.read_attr("samples", sound_preferences->samples);
 	root.read_attr("volume_while_speaking", sound_preferences->volume_while_speaking);
 	root.read_attr("mute_while_transmitting", sound_preferences->mute_while_transmitting);
+	root.read_attr("video_export_volume_db", sound_preferences->video_export_volume_db);
 }
 
 
@@ -4395,4 +4745,25 @@ void parse_environment_preferences(InfoTree root, std::string version)
 			Plugins::instance()->disable(tempstr);
 		}
 	}
+}
+
+extern const char* GetSDLKeyName(SDL_Scancode);
+
+const char* get_hotkey_binding(int hotkey, int type)
+{
+	
+	auto bindings = input_preferences->hotkey_bindings[hotkey - 1];
+	for (auto it = bindings.begin(); it != bindings.end(); ++it)
+	{
+		if (w_key::event_type_for_key(*it) == type)
+		{
+			return GetSDLKeyName(*it);
+		}
+		else
+		{
+			continue;
+		}
+	}
+
+	return "";
 }

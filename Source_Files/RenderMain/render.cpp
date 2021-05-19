@@ -422,7 +422,7 @@ void initialize_view_data(
 /* origin,origin_polygon_index,yaw,pitch,roll,etc. have probably changed since last call */
 void render_view(
 	struct view_data *view,
-	struct bitmap_definition *destination)
+	struct bitmap_definition *software_render_dest)
 {
 	update_view_data(view);
 
@@ -474,8 +474,8 @@ void render_view(
 			else
 			{
 #endif
-				// The software renderer needs this but the OpenGL one doesn't...
-				Rasterizer_SW.screen = destination;
+				assert(software_render_dest);
+				Rasterizer_SW.screen = software_render_dest;
 				RasPtr = &Rasterizer_SW;
 #ifdef HAVE_OPENGL
 			}
@@ -588,9 +588,14 @@ void check_m1_exploration(void)
 		explore_view.origin_polygon_index = explore_player->camera_polygon_index;
 
 		update_view_data(&explore_view);
+		
+		std::vector<uint16_t> saved_render_flags{RenderFlagList};
 		objlist_clear(render_flags, RENDER_FLAGS_BUFFER_SIZE);
+		
         // build_render_tree() actually marks the polygons
 		explore_tree.build_render_tree();
+
+		RenderFlagList = std::move(saved_render_flags);
 	}
 }
 
@@ -649,7 +654,7 @@ static void update_view_data(
 		{
 			struct world_point2d *vertex= &get_endpoint_data(polygon->endpoint_indexes[i])->vertex;
 			
-			if (vertex->x==view->origin.x && vertex->y==view->origin.y)
+			if (vertex->x == view->origin.x && vertex->y == view->origin.y)
 			{
 				world_point2d *ccw_vertex= &get_endpoint_data(polygon->endpoint_indexes[WRAP_LOW(i, polygon->vertex_count-1)])->vertex;
 				world_point2d *cw_vertex= &get_endpoint_data(polygon->endpoint_indexes[WRAP_HIGH(i, polygon->vertex_count-1)])->vertex;
@@ -657,10 +662,53 @@ static void update_view_data(
 				
 				inset_vector.i= (ccw_vertex->x-vertex->x) + (cw_vertex->x-vertex->x);
 				inset_vector.j= (ccw_vertex->y-vertex->y) + (cw_vertex->y-vertex->y);
+				
+				if (inset_vector.i == 0 && inset_vector.j == 0)
+				{
+					// This happens when the CW and CCW vertices are equidistant from and collinear with the origin;
+					// we switch tactics and just move directly toward one of them
+					inset_vector.i = cw_vertex->x - vertex->x;
+					inset_vector.j = cw_vertex->y - vertex->y;
+				}
+				
 				view->origin.x+= SGN(inset_vector.i);
 				view->origin.y+= SGN(inset_vector.j);
 				
 				break;
+			}
+		}
+		
+		// Also check adjacent polygons' vertices in case a degenerate polygon has a vertex under us (on a side)
+		{
+			// Local index of the first side that connects to such a polygon, or else NONE
+			// (if non-NONE, we're on this side or one collinear with it)
+			const int side_to_poly_with_vertex_on_origin = [&]() -> int
+			{
+				for (int i = 0; i < polygon->vertex_count; ++i)
+				{
+					const int16 adj_poly_index = polygon->adjacent_polygon_indexes[i];
+					if (adj_poly_index != NONE)
+					{
+						const auto& adj_poly = *get_polygon_data(adj_poly_index);
+						for (int k = 0; k < adj_poly.vertex_count; ++k)
+						{
+							const auto v = get_endpoint_data(adj_poly.endpoint_indexes[k])->vertex;
+							if (v.x == view->origin.x && v.y == view->origin.y)
+								return i;
+						}
+					}
+				}
+				return NONE;
+			}();
+			
+			if (side_to_poly_with_vertex_on_origin != NONE)
+			{
+				// Scoot inward or along the side we're on (we're not on a corner because we handled that case already)
+				const int vertex0_index = side_to_poly_with_vertex_on_origin;
+				const int vertex1_index = WRAP_HIGH(side_to_poly_with_vertex_on_origin, polygon->vertex_count - 1);
+				const world_distance vertex0_x = get_endpoint_data(polygon->endpoint_indexes[vertex0_index])->vertex.x;
+				const world_distance vertex1_x = get_endpoint_data(polygon->endpoint_indexes[vertex1_index])->vertex.x;
+				view->origin.y += (vertex1_x - vertex0_x >= 0) ? 1 : -1;
 			}
 		}
 		
@@ -711,18 +759,19 @@ static void update_render_effect(
 	}
 	else
 	{
+		float interpolated_phase = MAX(0, phase - 1 + view->heartbeat_fraction);
 		switch (effect)
 		{
 			case _render_effect_explosion:
-				shake_view_origin(view, EXPLOSION_EFFECT_RANGE - ((EXPLOSION_EFFECT_RANGE/2)*phase)/period);
+				shake_view_origin(view, EXPLOSION_EFFECT_RANGE - ((EXPLOSION_EFFECT_RANGE/2)*interpolated_phase)/period);
 				break;
 			
 			case _render_effect_fold_in:
-				phase= period-phase;
+				interpolated_phase= period-interpolated_phase;
 			case _render_effect_fold_out:
 				/* calculate world_to_screen based on phase */
-				view->world_to_screen_x= view->real_world_to_screen_x + (4*view->real_world_to_screen_x*phase)/period;
-				view->world_to_screen_y= view->real_world_to_screen_y - (view->real_world_to_screen_y*phase)/(period+period/4);
+				view->world_to_screen_x= view->real_world_to_screen_x + (4*view->real_world_to_screen_x*interpolated_phase)/period;
+				view->world_to_screen_y= view->real_world_to_screen_y - (view->real_world_to_screen_y*interpolated_phase)/(period+period/4);
 				break;
 		}
 	}

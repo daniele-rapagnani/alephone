@@ -106,6 +106,7 @@ struct view_data
 
 	short ticks_elapsed;
 	uint32 tick_count; /* for effects and transfer modes */
+	float heartbeat_fraction;
 	short origin_polygon_index;
 	angle yaw, pitch, roll;
 	fixed_angle virtual_yaw, virtual_pitch;
@@ -182,7 +183,7 @@ extern vector<uint16> RenderFlagList;
 void allocate_render_memory(void);
 
 void initialize_view_data(struct view_data *view, bool ignore_preferences = false);
-void render_view(struct view_data *view, struct bitmap_definition *destination);
+void render_view(struct view_data *view, struct bitmap_definition *software_render_dest /*ignored under OpenGL*/);
 
 void start_render_effect(struct view_data *view, short effect);
 

@@ -77,6 +77,14 @@ enum {
 	_sw_driver_opengl,
 };
 
+enum {
+	_ephemera_off,
+	_ephemera_low,
+	_ephemera_medium,
+	_ephemera_high,
+	_ephemera_ultra
+};
+
 struct graphics_preferences_data
 {
 	struct screen_mode_data screen_mode;
@@ -87,11 +95,13 @@ struct graphics_preferences_data
 
 	int16 software_alpha_blending;
 	int16 software_sdl_driver;
-
-	bool hog_the_cpu;
+	int16 fps_target; // should be a multiple of 30; 0 = unlimited
 
 	int16 movie_export_video_quality;
+	int32 movie_export_video_bitrate; // 0 is automatic
     int16 movie_export_audio_quality;
+
+	int16 ephemera_quality;
 };
 
 enum {
@@ -187,6 +197,7 @@ enum {
 	NUMBER_OF_MOUSE_ACCEL_TYPES
 };
 
+static constexpr int NUMBER_OF_HOTKEYS = 12;
 
 typedef std::map<int, std::set<SDL_Scancode> > key_binding_map;
 
@@ -217,6 +228,7 @@ struct input_preferences_data
 	
 	key_binding_map key_bindings;
 	key_binding_map shell_key_bindings;
+	key_binding_map hotkey_bindings;
 };
 
 #define MAXIMUM_PATCHES_PER_ENVIRONMENT (32)
@@ -270,6 +282,10 @@ void initialize_preferences(void);
 void read_preferences();
 void handle_preferences(void);
 void write_preferences(void);
+
+static inline int16 get_fps_target() {
+	return graphics_preferences->fps_target;
+}
 
 void transition_preferences(const DirectorySpecifier& legacy_prefs_dir);
 

@@ -288,6 +288,16 @@ const lang_def Lua_ScoringMode_Mnemonics[] = {
   {0, 0}
 };
 
+const lang_def Lua_ItemKind_Mnemonics[] = {
+	{"weapon", 0},
+	{"ammunition", 1},
+	{"powerup", 2},
+	{"item", 3},
+	{"weapon_powerup", 4},
+	{"ball", 5},
+	{0, 0}
+};
+
 const lang_def Lua_ItemType_Mnemonics[] = {
 	{"knife", 0},
 	{"pistol", 1},
@@ -326,6 +336,15 @@ const lang_def Lua_ItemType_Mnemonics[] = {
 	{"smg", 34},
 	{"smg ammo", 35},
 	{0, 0}
+};
+
+const lang_def Lua_EphemeraQuality_Mnemonics[] = {
+	{"off", 0},
+	{"low", 1},
+	{"medium", 2},
+	{"high", 3},
+	{"ultra", 4},
+        {0, 0}
 };
 
 const lang_def Lua_LightFunction_Mnenonics[] = {

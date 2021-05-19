@@ -27,6 +27,7 @@
 #include "csalerts.h"
 #include "Logging.h"
 
+#include <algorithm>
 #include <boost/lexical_cast.hpp>
 
 // for CPU count
@@ -333,6 +334,7 @@ Movie::Movie() :
   av(NULL),
   encodeThread(NULL),
   encodeReady(NULL),
+  frameBufferObject(nullptr),
   fillReady(NULL),
   stillEncoding(0)
 {
@@ -372,14 +374,6 @@ bool Movie::Setup()
     
 	alephone::Screen *scr = alephone::Screen::instance();
 	view_rect = scr->window_rect();
-	
-	if (MainScreenIsOpenGL())
-		view_rect.y = scr->height() - (view_rect.y + view_rect.h);
-	
-	view_rect.x *= scr->pixel_scale();
-	view_rect.y *= scr->pixel_scale();
-	view_rect.w *= scr->pixel_scale();
-	view_rect.h *= scr->pixel_scale();
 
 	temp_surface = SDL_CreateRGBSurface(SDL_SWSURFACE, view_rect.w, view_rect.h, 32,
 										0x00ff0000, 0x0000ff00, 0x000000ff,
@@ -391,6 +385,8 @@ bool Movie::Setup()
     
     av_register_all();
     avcodec_register_all();
+
+	const auto fps = std::max(get_fps_target(), static_cast<int16_t>(30));
     
     // Open output file
     AVOutputFormat *fmt;
@@ -435,7 +431,7 @@ bool Movie::Setup()
         video_stream->codec->codec_type = AVMEDIA_TYPE_VIDEO;
         video_stream->codec->width = view_rect.w;
         video_stream->codec->height = view_rect.h;
-        video_stream->codec->time_base = AVRational{1, TICKS_PER_SECOND};
+        video_stream->codec->time_base = AVRational{1, fps};
         video_stream->codec->pix_fmt = AV_PIX_FMT_YUV420P;
         video_stream->codec->flags |= AV_CODEC_FLAG_CLOSED_GOP;
         video_stream->codec->thread_count = get_cpu_count();
@@ -447,7 +443,24 @@ bool Movie::Setup()
         
         // tuning options
         int vq = graphics_preferences->movie_export_video_quality;
-        video_stream->codec->bit_rate = ScaleQuality(vq, 100*1024, 1024*1024, 10*1024*1024);
+		int bitrate = graphics_preferences->movie_export_video_bitrate;
+
+		if (bitrate <= 0) // auto, based on YouTube's SDR standard frame rate
+						  // recommendations
+		{
+			if      (view_rect.h >= 2160) bitrate = 40 * 1024 * 1024;
+			else if (view_rect.h >= 1440) bitrate = 16 * 1024 * 1024;
+			else if (view_rect.h >= 1080) bitrate =  8 * 1024 * 1024;
+			else if (view_rect.h >=  720) bitrate =  5 * 1024 * 1024;
+			else if (view_rect.h >=  480) bitrate =  5 * 1024 * 1024 / 2;
+			else                          bitrate =      1024 * 1024;
+
+			// YouTube recommends 50% more bitrate for 60 fps, so extrapolate
+			// from there
+			bitrate += std::log2(fps / 30) * bitrate / 2;
+		}
+		
+        video_stream->codec->bit_rate = bitrate;
         video_stream->codec->qmin = ScaleQuality(vq, 10, 4, 0);
         video_stream->codec->qmax = ScaleQuality(vq, 63, 63, 50);
         std::string crf = boost::lexical_cast<std::string>(ScaleQuality(vq, 63, 10, 4));
@@ -568,7 +581,7 @@ bool Movie::Setup()
     // Start movie file
     if (success)
     {
-        video_stream->time_base = AVRational{1, TICKS_PER_SECOND};
+        video_stream->time_base = AVRational{1, fps};
         audio_stream->time_base = AVRational{1, mx->obtained.freq};
         avformat_write_header(av->fmt_ctx, NULL);
     }
@@ -577,7 +590,14 @@ bool Movie::Setup()
     if (success)
     {
         videobuf.resize(av->video_bufsize);
-        audiobuf.resize(2 * 2 * mx->obtained.freq / 30);
+        audiobuf.resize(2 * 2 * mx->obtained.freq / fps);
+
+		if (mx->obtained.freq % fps != 0)
+		{
+			// TODO: fixme!
+			success = false;
+			err_msg = "Audio buffer size is non-integer; try lowering FPS target";
+		}
 	}
 	if (success)
 	{
@@ -603,6 +623,12 @@ bool Movie::Setup()
         logError(full_msg.c_str());
 		alert_user(full_msg.c_str());
 	}
+
+    if (success && MainScreenIsOpenGL())
+    {
+        frameBufferObject = std::unique_ptr<FBO>(new FBO(view_rect.w, view_rect.h));
+    }
+
     av->inited = success;
 	return success;
 }
@@ -815,9 +841,19 @@ void Movie::AddFrame(FrameType ftype)
 #ifdef HAVE_OPENGL
 	else
 	{
-		// Read OpenGL frame buffer
-		glReadPixels(view_rect.x, view_rect.y, view_rect.w, view_rect.h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, &videobuf.front());
-		
+        SDL_Rect viewportDimensions = alephone::Screen::instance()->OpenGLViewPort();
+        GLint fbx = viewportDimensions.x, fby = viewportDimensions.y, fbWidth = viewportDimensions.w, fbHeight = viewportDimensions.h;
+
+        // Copy default frame buffer to another one with correct viewport resized/pixels rescaled
+        frameBufferObject->activate(true, GL_DRAW_FRAMEBUFFER_EXT);
+        glBlitFramebufferEXT(fbx, fby, fbWidth + fbx, fbHeight + fby, view_rect.x, view_rect.y, view_rect.w, view_rect.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        frameBufferObject->deactivate();
+
+        // Read our new frame buffer with rescaled pixels
+        frameBufferObject->activate(true, GL_READ_FRAMEBUFFER_EXT);
+        glReadPixels(view_rect.x, view_rect.y, view_rect.w, view_rect.h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, &videobuf.front());
+        frameBufferObject->deactivate();
+
 		// Copy pixel buffer (which is upside-down) to surface
 		for (int y = 0; y < view_rect.h; y++)
 			memcpy((uint8 *)temp_surface->pixels + temp_surface->pitch * y, &videobuf.front() + view_rect.w * 4 * (view_rect.h - y - 1), view_rect.w * 4);
@@ -826,8 +862,8 @@ void Movie::AddFrame(FrameType ftype)
 	
 	int audio_bytes_per_frame = audiobuf.size();
 	Mixer *mx = Mixer::instance();
-	int old_vol = mx->main_volume;
-	mx->main_volume = 0x100;
+	float old_vol = mx->main_volume;
+	mx->SetVolume(sound_preferences->video_export_volume_db);
 	mx->Mix(&audiobuf.front(), audio_bytes_per_frame / 4, true, true, true);
 	mx->main_volume = old_vol;
 	

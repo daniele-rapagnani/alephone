@@ -21,6 +21,11 @@
  
  */
 
+#if defined _MSC_VER
+#define NOMINMAX
+#include <algorithm>
+#endif
+
 // make FFmpeg happy
 #define __STDC_CONSTANT_MACROS
 
@@ -170,11 +175,6 @@ void FFmpegDecoder::Close()
         av_fifo_reset(av->fifo);
     if (av)
         av->started = false;
-}
-
-int32 FFmpegDecoder::Frames()
-{
-    return av->stream->nb_frames;
 }
 
 bool FFmpegDecoder::GetAudio()

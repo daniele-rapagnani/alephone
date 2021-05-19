@@ -236,35 +236,6 @@ void w_slider_text::draw(SDL_Surface *s) const
 	draw_text(s, text, rect.x, rect.y + font->get_ascent() + (rect.h - font->get_line_height()) / 2, get_theme_color(LABEL_WIDGET, state, FOREGROUND_COLOR), font, style);
 }
 
-/*
- *  Picture (PICT resource)
- */
-
-w_pict::w_pict(int id)
-{
-	LoadedResource rsrc;
-	get_resource(FOUR_CHARS_TO_INT('P', 'I', 'C', 'T'), id, rsrc);
-	picture = picture_to_surface(rsrc);
-	if (picture) {
-		rect.w = static_cast<uint16>(picture->w);
-		rect.h = static_cast<uint16>(picture->h);
-		SDL_SetColorKey(picture, SDL_TRUE, SDL_MapRGB(picture->format, 0xff, 0xff, 0xff));
-	} else
-		rect.w = rect.h = 0;
-}
-
-w_pict::~w_pict()
-{
-	if (picture)
-		SDL_FreeSurface(picture);
-}
-
-void w_pict::draw(SDL_Surface *s) const
-{
-	if (picture)
-		SDL_BlitSurface(picture, NULL, s, const_cast<SDL_Rect *>(&rect));
-}
-
 
 /*
  *  Button
@@ -400,7 +371,7 @@ void w_button_base::click(int /*x*/, int /*y*/)
 {
 	// simulate a mouse press
 	mouse_down(0, 0);
-	SDL_Delay(1000 / 12);
+	sleep_for_machine_ticks(MACHINE_TICKS_PER_SECOND / 12);
 	mouse_up(0, 0);
 }
 
@@ -1471,7 +1442,7 @@ void w_number_entry::event(SDL_Event &e)
 		for (std::string::iterator it = input_roman.begin(); it != input_roman.end(); ++it)
 		{
 			uint16 uc = *it;
-			if (uc >= '0' && (uc < 0x80 || enable_mac_roman) && (num_chars + 1) < max_chars) {
+			if (uc >= '0' && uc <= '9' && (num_chars + 1) < max_chars) {
 				memmove(&buf[cursor_position + 1], &buf[cursor_position], num_chars - cursor_position);
 				buf[cursor_position++] = static_cast<char>(uc);
 				buf[++num_chars] = 0;
@@ -1480,8 +1451,10 @@ void w_number_entry::event(SDL_Event &e)
 			}
 		}
 	}
-
-	w_text_entry::event(e);
+	else
+	{
+		w_text_entry::event(e);
+	}
 }
 
 void w_number_entry::set_number(int number)
@@ -1540,20 +1513,41 @@ static const char* sMouseButtonKeyName[NUM_SDL_MOUSE_BUTTONS] = {
         "Mouse Scroll Down"
 };
 
-static const char* sJoystickButtonKeyName[NUM_SDL_JOYSTICK_BUTTONS] = {
-	"A", "B", "X", "Y", "Back", "Guide", "Start",
-	"LS", "RS", "LB", "RB", "Up", "Down", "Left", "Right",
-	"LS Right", "LS Down", "RS Right", "RS Down", "LT", "RT",
-	"LS Left", "LS Up", "RS Left", "RS Up", "LT Neg", "RT Neg"
-};
+static const char* get_joystick_button_key_name(int offset)
+{
+	static_assert(SDL_CONTROLLER_BUTTON_MAX <= 21 &&
+				  SDL_CONTROLLER_AXIS_MAX <= 12,
+				  "SDL changed the number of buttons/axes again!");
+
+	static const char* buttons[] = {
+		"A", "B", "X", "Y", "Back", "Guide", "Start",
+		"LS", "RS", "LB", "RB", "Up", "Down", "Left", "Right",
+		// new in SDL 2.0.14
+		"Misc", "Paddle 1", "Paddle 2", "Paddle 3", "Paddle 4", "TP Button",
+	};
+
+	static const char* axes[] = {
+		"LS Right", "LS Down", "RS Right", "RS Down", "LT", "RT",
+		"LS Left", "LS Up", "RS Left", "RS Up", "LT Neg", "RT Neg"
+	};
+
+	if (offset < SDL_CONTROLLER_BUTTON_MAX)
+	{
+		return buttons[offset];
+	}
+	else
+	{
+		return axes[offset - SDL_CONTROLLER_BUTTON_MAX];
+	}
+}
 
 // ZZZ: this injects our phony key names but passes along the rest.
-static const char*
+const char*
 GetSDLKeyName(SDL_Scancode inKey) {
 	if (w_key::event_type_for_key(inKey) == w_key::MouseButton)
         return sMouseButtonKeyName[inKey - AO_SCANCODE_BASE_MOUSE_BUTTON];
 	else if (w_key::event_type_for_key(inKey) == w_key::JoystickButton)
-	    return sJoystickButtonKeyName[inKey - AO_SCANCODE_BASE_JOYSTICK_BUTTON];
+	    return get_joystick_button_key_name(inKey - AO_SCANCODE_BASE_JOYSTICK_BUTTON);
     else
         return SDL_GetScancodeName(inKey);
 }
@@ -1610,7 +1604,7 @@ void w_key::event(SDL_Event &e)
 		switch (e.type) {
 			case SDL_MOUSEBUTTONDOWN:
 				if (event_type == MouseButton) {
-					if (e.button.button < NUM_SDL_REAL_MOUSE_BUTTONS) {
+					if (e.button.button < NUM_SDL_REAL_MOUSE_BUTTONS + 1) {
 						set_key(static_cast<SDL_Scancode>(AO_SCANCODE_BASE_MOUSE_BUTTON + e.button.button - 1));
 						handled = true;
 					}

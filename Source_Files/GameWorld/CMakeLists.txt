@@ -18,7 +18,9 @@ add_library(
         ${CMAKE_CURRENT_SOURCE_DIR}/platforms.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/player.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/projectiles.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/interpolated_world.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/scenery.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/weapons.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/ephemera.cpp
 )

@@ -200,7 +200,10 @@ protected:
 		}
 
 	bool reallyInflateFrom(AIStream& inStream)
-		{ assert(false); }
+	{ 
+		assert(false);
+		return false;
+	}
 
 private:
 	uint16 m_mode;
@@ -765,7 +768,7 @@ public:
 
 		int minutes_remaining() const {
 			if (m_timeRemaining == -1) return -1;
-			int remaining = m_timeRemaining / 60 - (SDL_GetTicks() - m_ticks) / 1000 / 60;
+			int remaining = m_timeRemaining / 60 - (machine_tick_count() - m_ticks) / 1000 / 60;
 			if (remaining < 0) remaining = 0;
 			return remaining;
 		}

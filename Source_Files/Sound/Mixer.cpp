@@ -21,13 +21,12 @@
 
 #include "Mixer.h"
 #include "interface.h" // for strERRORS
+#include "shell_options.h"
 
-extern bool option_nosound;
-
-void Mixer::Start(uint16 rate, bool sixteen_bit, bool stereo, int num_channels, int volume, uint16 samples)
+void Mixer::Start(uint16 rate, bool sixteen_bit, bool stereo, int num_channels, float db, uint16 samples)
 {
 	sound_channel_count = num_channels;
-	main_volume = volume;
+	main_volume = from_db(db);
 	desired.freq = rate;
 #if defined(__MACH__) && defined(__APPLE__)
 	desired.format = sixteen_bit ? AUDIO_S16SYS : AUDIO_U8;
@@ -39,9 +38,9 @@ void Mixer::Start(uint16 rate, bool sixteen_bit, bool stereo, int num_channels, 
 	desired.callback = MixerCallback;
 	desired.userdata = reinterpret_cast<void *>(this);
 
-	if (option_nosound || SDL_OpenAudio(&desired, &obtained) < 0) 
+	if (shell_options.nosound || SDL_OpenAudio(&desired, &obtained) < 0) 
 	{
-		if (!option_nosound)
+		if (!shell_options.nosound)
 			// opening audio failed
 			alert_user(infoError, strERRORS, badSoundChannels, -1);
 		sound_channel_count = 0;
@@ -462,11 +461,11 @@ void Mixer::ResampleInner(Channel* c, int16* left, int16* right, int& samples)
 	}
 }
 
-static inline void apply_volume_and_clip(int32* v, int16 main_volume, int samples)
+static inline void apply_volume_and_clip(int32* v, float main_volume, int samples)
 {
 	while (samples--)
 	{
-		*v = (*v * main_volume) >> 8;
+		*v = static_cast<int32>(*v * main_volume);
 		if (*v > INT16_MAX)
 		{
 			*v = INT16_MAX;
@@ -573,6 +572,7 @@ void Mixer::Mix(uint8* p, int len, bool stereo, bool is_sixteen_bit, bool is_sig
 
 		if (game_is_networked &&
 		    SoundManager::instance()->parameters.mute_while_transmitting &&
+			dynamic_world->speaking_player_index != -1 && 
 		    dynamic_world->speaking_player_index == local_player_index)
 		{
 			// mute sound!

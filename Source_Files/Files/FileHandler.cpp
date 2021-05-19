@@ -24,13 +24,18 @@
  *
  *  Written in 2000 by Christian Bauer
  */
+
+#if defined _MSC_VER 
+ //not #if defined(_WIN32) || defined(_WIN64) because we have strcasecmp in mingw
+#define strcasecmp _stricmp
+#endif
+
 #include "cseries.h"
 #include "FileHandler.h"
 #include "resource_manager.h"
 
 #include "shell.h"
 #include "interface.h"
-#include "game_errors.h"
 #include "tags.h"
 
 #include <stdio.h>
@@ -45,13 +50,15 @@
 #ifdef HAVE_UNISTD_H
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <dirent.h>
 #include <unistd.h>
 #endif
 
 #ifdef __ANDROID__
 #include "android_assets.h"
+#include <unistd.h>
+#include <sys/stat.h>
 #include <dirent.h>
+#include <stdio.h>
 #endif
 
 #ifdef HAVE_ZZIP
@@ -60,6 +67,10 @@
 #endif
 
 #if defined(__WIN32__)
+#if defined _MSC_VER
+#define R_OK 4
+#endif
+#include <wchar.h>
 #define PATH_SEP '\\'
 #else
 #define PATH_SEP '/'
@@ -77,6 +88,8 @@
 #include <boost/filesystem.hpp>
 
 namespace io = boost::iostreams;
+namespace sys = boost::system;
+namespace fs = boost::filesystem;
 
 // From shell_sdl.cpp
 extern vector<DirectorySpecifier> data_search_path;
@@ -84,6 +97,46 @@ extern DirectorySpecifier local_data_dir, preferences_dir, saved_games_dir, quic
 
 extern bool is_applesingle(SDL_RWops *f, bool rsrc_fork, int32 &offset, int32 &length);
 extern bool is_macbinary(SDL_RWops *f, int32 &data_length, int32 &rsrc_length);
+
+#ifdef O_BINARY // Microsoft extension
+constexpr int o_binary = O_BINARY;
+#else
+constexpr int o_binary = 0;
+#endif
+
+static int to_posix_code_or_unknown(sys::error_code ec)
+{
+	const auto cond = ec.default_error_condition();
+	return cond.category() == sys::generic_category() ? cond.value() : unknown_filesystem_error;
+}
+
+#ifdef __WIN32__
+static fs::path utf8_to_path(const std::string& utf8) { return utf8_to_wide(utf8); }
+static std::string path_to_utf8(const fs::path& path) { return wide_to_utf8(path.native()); }
+#else
+static fs::path utf8_to_path(const std::string& utf8) { return utf8; }
+static std::string path_to_utf8(const fs::path& path) { return path.native(); }
+#endif
+
+// utf8_zzip_io(): a zzip I/O handler set with a UTF-8-compatible 'open' handler
+#ifdef HAVE_ZZIP
+#ifdef __WIN32__
+static int win_zzip_open(const char* f, int o, ...) { return _wopen(utf8_to_wide(f).c_str(), o); }
+
+static const zzip_plugin_io_handlers& utf8_zzip_io()
+{
+	static const zzip_plugin_io_handlers io = []
+	{
+		zzip_plugin_io_handlers io = {zzip_get_default_io()->fd};
+		io.fd.open = &win_zzip_open;
+		return io;
+	}();
+	return io;
+}
+#else
+static const zzip_plugin_io_handlers& utf8_zzip_io() { return *zzip_get_default_io(); }
+#endif
+#endif // HAVE_ZZIP
 
 /*
  *  Opened file
@@ -126,7 +179,7 @@ bool OpenedFile::SetPosition(int32 Position)
 
 	err = 0;
 	if (SDL_RWseek(f, Position + fork_offset, SEEK_SET) < 0)
-		err = errno;
+		err = unknown_filesystem_error;
 	return err == 0;
 }
 
@@ -282,7 +335,7 @@ bool OpenedResourceFile::Check(uint32 Type, int16 ID)
 {
 	Push();
 	bool result = has_1_resource(Type, ID);
-	err = result ? 0 : errno;
+	err = result ? 0 : ENOENT;
 	Pop();
 	return result;
 }
@@ -291,7 +344,7 @@ bool OpenedResourceFile::Get(uint32 Type, int16 ID, LoadedResource &Rsrc)
 {
 	Push();
 	bool success = get_1_resource(Type, ID, Rsrc);
-	err = success ? 0 : errno;
+	err = success ? 0 : ENOENT;
 	Pop();
 	return success;
 }
@@ -338,14 +391,14 @@ bool FileSpecifier::Create(Typecode Type)
 // Create directory
 bool FileSpecifier::CreateDirectory()
 {
-	err = 0;
-#if defined(__WIN32__)
-	if (mkdir(GetPath()) < 0)
+#ifdef __ANDROID__
+	return mkdir(utf8_to_path(name).c_str(), 0777);
 #else
-	if (mkdir(GetPath(), 0777) < 0)
-#endif
-		err = errno;
+	sys::error_code ec;
+	const bool created_dir = fs::create_directory(utf8_to_path(name), ec);
+	err = ec.value() == 0 ? (created_dir ? 0 : EEXIST) : to_posix_code_or_unknown(ec);
 	return err == 0;
+#endif
 }
 
 #ifdef HAVE_ZZIP
@@ -375,20 +428,21 @@ bool FileSpecifier::Open(OpenedFile &OFile, bool Writable)
 #ifdef HAVE_ZZIP
 		if (!Writable)
 		{
-			f = OFile.f = SDL_RWFromZZIP(unix_path_separators(GetPath()).c_str(), "rb");
+			f = OFile.f = SDL_RWFromZZIP(unix_path_separators(GetPath()).c_str(), &utf8_zzip_io());
+			err = f ? 0 : errno;
 		} 
 		else {
 			f = OFile.f = SDL_RWFromFile(GetPath(), "wb+");
+			err = f ? 0 : unknown_filesystem_error;
 		}
 #else
 		f = OFile.f = SDL_RWFromFile(GetPath(), Writable ? "wb+" : "rb");
+		err = f ? 0 : unknown_filesystem_error;
 #endif
 
 	}
 
-	err = f ? 0 : errno;
 	if (f == NULL) {
-		set_game_error(systemError, err);
 		return false;
 	}
 	if (Writable)
@@ -413,15 +467,22 @@ bool FileSpecifier::Open(OpenedFile &OFile, bool Writable)
 	return true;
 }
 
+bool FileSpecifier::OpenForWritingText(OpenedFile& OFile)
+{
+	OFile.Close();
+	OFile.f = SDL_RWFromFile(GetPath(), "w");
+	err = OFile.f ? 0 : unknown_filesystem_error;
+	return err == 0;
+}
+
 // Open resource file
 bool FileSpecifier::Open(OpenedResourceFile &OFile, bool Writable)
 {
 	OFile.Close();
 
 	OFile.f = open_res_file(*this);
-	err = OFile.f ? 0 : errno;
+	err = OFile.f ? 0 : unknown_filesystem_error;
 	if (OFile.f == NULL) {
-		set_game_error(systemError, err);
 		return false;
 	} else
 		return true;
@@ -430,20 +491,14 @@ bool FileSpecifier::Open(OpenedResourceFile &OFile, bool Writable)
 // Check for existence of file
 bool FileSpecifier::Exists()
 {
-	// Check whether the file is readable
-	err = 0;
-
-#ifdef __ANDROID__
-	{
-		SDL_RWops* io = SDL_RWFromFile(GetPath(), "rb");
-
-		if (!io)
-		{
-			err = EPERM;
-		}
-	}
+#ifdef __WIN32__
+	const bool access_ok = _waccess(utf8_to_wide(name).c_str(), R_OK) == 0;
+#elif defined(__ANDROID__)
+	const bool access_ok = SDL_RWFromFile(GetPath(), "rb") != nullptr;
 #else
-	if (access(GetPath(), R_OK) < 0)
+	const bool access_ok = access(GetPath(), R_OK) == 0;
+#endif
+	if (!access_ok)
 		err = errno;
 #endif
 	
@@ -451,7 +506,8 @@ bool FileSpecifier::Exists()
 	if (err)
 	{
 		// Check whether zzip can open the file (slow!)
-		ZZIP_FILE* file = zzip_open(unix_path_separators(GetPath()).c_str(), R_OK);
+		const auto n = unix_path_separators(name);
+		ZZIP_FILE* file = zzip_open_ext_io(n.c_str(), O_RDONLY|o_binary, ZZIP_ONLYZIP, nullptr, &utf8_zzip_io());
 		if (file)
 		{
 			zzip_close(file);
@@ -468,23 +524,49 @@ bool FileSpecifier::Exists()
 
 bool FileSpecifier::IsDir()
 {
+#ifdef __ANDROID__
+	using Node = const android_assets::BakedFilesystem::Node;
+	const Node* dir = android_assets::BakedFilesystem::instance().get_file(utf8_to_path(name).c_str());
+
+	if (dir && dir->directory)
+	{
+		return true;
+	}
+
 	struct stat st;
-	err = 0;
-	if (stat(GetPath(), &st) < 0)
+
+	if (stat(utf8_to_path(name).c_str(), &st) != 0)
+	{
 		return false;
-	return (S_ISDIR(st.st_mode));
+	}
+
+	return S_ISDIR(st.st_mode);
+#else
+	sys::error_code ec;
+	const bool is_dir = fs::is_directory(utf8_to_path(name), ec);
+	err = to_posix_code_or_unknown(ec);
+	return err == 0 && is_dir;
+#endif
 }
 
 // Get modification date
 TimeType FileSpecifier::GetDate()
 {
+#ifdef __ANDROID__
 	struct stat st;
-	err = 0;
-	if (stat(GetPath(), &st) < 0) {
-		err = errno;
+
+	if (stat(utf8_to_path(name).c_str(), &st) != 0)
+	{
 		return 0;
 	}
+
 	return st.st_mtime;
+#else
+	sys::error_code ec;
+	const auto mtime = fs::last_write_time(utf8_to_path(name), ec);
+	err = to_posix_code_or_unknown(ec);
+	return err == 0 ? mtime : 0;
+#endif
 }
 
 static const char * alephone_extensions[] = {
@@ -655,22 +737,26 @@ bool FileSpecifier::GetFreeSpace(uint32 &FreeSpace)
 // Delete file
 bool FileSpecifier::Delete()
 {
-	err = 0;
-	if (remove(GetPath()) < 0)
-		err = errno;
+#ifdef __ANDROID__
+	return remove(utf8_to_path(name).c_str()) == 0;
+#else
+	sys::error_code ec;
+	const bool removed = fs::remove(utf8_to_path(name), ec);
+	err = ec.value() == 0 ? (removed ? 0 : ENOENT) : to_posix_code_or_unknown(ec);
 	return err == 0;
+#endif
 }
 
 bool FileSpecifier::Rename(const FileSpecifier& Destination)
 {
-#ifdef WIN32
-	// Work around Windows' non-POSIX behavior on rename().
-	// If we fail, go ahead and try to rename anyway.
-	FileSpecifier d2 = Destination;
-	if (d2.Exists() && !d2.IsDir())
-		d2.Delete();
+#ifdef __ANDROID__
+	return ::rename(utf8_to_path(name).c_str(), utf8_to_path(Destination.name).c_str()) == 0;
+#else
+	sys::error_code ec;
+	fs::rename(utf8_to_path(name), utf8_to_path(Destination.name), ec);
+	err = to_posix_code_or_unknown(ec);
+	return err == 0;
 #endif
-	return rename(GetPath(), Destination.GetPath()) == 0;
 }
 
 // Set to local (per-user) data directory
@@ -773,7 +859,7 @@ void FileSpecifier::SetTempName(const FileSpecifier& other)
 #ifdef __ANDROID__
 	name = other.name;
 #else
-	name = boost::filesystem::unique_path(other.name + "%%%%%%").string();
+	name = other.name + fs::unique_path("%%%%%%").string();
 #endif
 }
 
@@ -871,7 +957,7 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 
         	for (const Node* n : files)
 			{
-				vec.push_back(dir_entry(n->name, n->size, n->directory, false));
+				vec.push_back(dir_entry(n->name, n->directory));
 			}
 		}
 
@@ -880,7 +966,6 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
             return true;
         }
     }
-#endif
 
 	DIR *d = opendir(GetPath());
 
@@ -896,14 +981,36 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 		if (stat(full_path.GetPath(), &st) == 0) {
 			// Ignore files starting with '.' and the directories '.' and '..'
 			if (de->d_name[0] != '.' || (S_ISDIR(st.st_mode) && !(de->d_name[1] == '\0' || de->d_name[1] == '.')))
-				vec.push_back(dir_entry(de->d_name, st.st_size, S_ISDIR(st.st_mode), false, st.st_mtime));
+				vec.push_back(dir_entry(de->d_name, S_ISDIR(st.st_mode), st.st_mtime));
 		}
 		de = readdir(d);
 	}
 	closedir(d);
 	err = 0;
+#else
+	sys::error_code ec;
+	for (fs::directory_iterator it(utf8_to_path(name), ec), end; it != end; it.increment(ec))
+	{
+		const auto& entry = *it;
+		sys::error_code ignored_ec;
+		const auto type = entry.status(ignored_ec).type();
+		const bool is_dir = type == fs::directory_file;
+		
+		if (!(is_dir || type == fs::regular_file))
+			continue; // skip special or failed-to-stat files
+		
+		const auto basename = entry.path().filename();
+		
+		if (!is_dir && basename.native()[0] == '.')
+			continue; // skip dot-prefixed regular files
+		
+		vec.emplace_back(path_to_utf8(basename), is_dir, fs::last_write_time(entry.path(), ignored_ec));
+	} 
+	
+	err = to_posix_code_or_unknown(ec);
+#endif
 
-	return true;
+	return err == 0;
 }
 
 // Copy file contents
@@ -935,6 +1042,31 @@ bool FileSpecifier::CopyContents(FileSpecifier &source_name)
 	if (err)
 		Delete();
 	return err == 0;
+}
+
+// Read ZIP file contents
+bool FileSpecifier::ReadZIP(vector<string> &vec)
+{
+	err = 0;
+	vec.clear();
+	
+#ifdef HAVE_ZZIP
+	const auto zip = zzip_dir_open_ext_io(unix_path_separators(name).c_str(), nullptr, nullptr, &utf8_zzip_io());
+	if (!zip)
+	{
+		err = errno;
+		return false;
+	}
+	
+	for (ZZIP_DIRENT entry; zzip_dir_read(zip, &entry); )
+		vec.emplace_back(entry.d_name);
+	
+	zzip_dir_close(zip);
+	return true;
+#else
+	err = ENOTSUP;
+	return false;
+#endif
 }
 
 // ZZZ: Filesystem browsing list that lets user actually navigate directories...
@@ -1087,7 +1219,7 @@ private:
 
 	void select_entry(const string& inName, bool inIsDirectory)
 	{
-		dir_entry theEntryToFind(inName, NONE /* length - ignored for our purpose */, inIsDirectory);
+		dir_entry theEntryToFind(inName, inIsDirectory);
 		vector<dir_entry>::iterator theEntry = find(entries.begin(), entries.end(), theEntryToFind);
 		if(theEntry != entries.end())
 			set_selection(theEntry - entries.begin());

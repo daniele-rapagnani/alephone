@@ -2073,7 +2073,7 @@ void dialog::event(SDL_Event &e)
     }
     break;
   case SDL_WINDOWEVENT:
-    if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+    if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
 		draw();
 		handled = true;
 	}
@@ -2223,10 +2223,10 @@ int dialog::run(bool intro_exit_sounds)
 		if (done)
 			break;
 
-		if (SDL_GetTicks() > last_redraw + TICKS_PER_SECOND / 30)
+		if (machine_tick_count() > last_redraw + TICKS_PER_SECOND / 30)
 		{
 			draw_dirty_widgets();
-			last_redraw = SDL_GetTicks();
+			last_redraw = machine_tick_count();
 		}
         
 		// Run custom processing function
@@ -2235,7 +2235,7 @@ int dialog::run(bool intro_exit_sounds)
 
 		// Give time to system
 		global_idle_proc();
-		SDL_Delay(10);
+		yield();
 	}
 
 	// Remove dialog from screen
@@ -2251,6 +2251,8 @@ void dialog::start(bool play_sound)
 {
 	// Make sure nobody tries re-entrancy with us
 	assert(!done);
+
+	initial_text_input = SDL_IsTextInputActive();
 
 	// Set new active dialog
 	parent_dialog = top_dialog;
@@ -2322,7 +2324,14 @@ bool dialog::process_events()
 
 int dialog::finish(bool play_sound)
 {
-	SDL_StopTextInput();
+	if (initial_text_input)
+	{
+		SDL_StartTextInput();
+	}
+	else
+	{
+		SDL_StopTextInput();
+	}
 
 	// Farewell sound
 	if (play_sound)

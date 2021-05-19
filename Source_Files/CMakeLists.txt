@@ -19,6 +19,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/FFmpeg)
 add_library(main SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/shell.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shell_misc.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/shell_options.cpp
 )
 
 target_link_libraries(main -Wl,--whole-archive cseries expat files gameworld input nat a1lua misc network metaserver rendermain renderother sound tcpmess xml ffmpeg -Wl,--no-whole-archive)

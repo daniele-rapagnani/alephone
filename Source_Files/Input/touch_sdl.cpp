@@ -4,6 +4,7 @@
 
 #include <SDL.h>
 
+#include "cseries.h"
 #include "screen.h"
 #include "player.h"
 #include "touch.h"

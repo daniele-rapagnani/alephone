@@ -363,7 +363,7 @@ struct player_powerup_definition player_powerups = {
 /* ---------- private prototypes */
 
 static void set_player_shapes(short player_index, bool animate);
-static void revive_player(short player_index);
+void revive_player(short player_index);
 static void recreate_player(short player_index);
 static void kill_player(short player_index, short aggressor_player_index, short action);
 static void give_player_initial_items(short player_index);
@@ -577,6 +577,61 @@ void update_m1_solo_player_in_terminal(ActionQueues* inActionQueuesToUse)
 	update_player_keys_for_terminal(local_player_index, inActionQueuesToUse->dequeueActionFlags(local_player_index));
 	update_player_for_terminal_mode(local_player_index);
 	sLocalPlayerTicksSinceTerminal = 0;
+}
+
+static const auto hotkey_mask = _cycle_weapons_forward | _cycle_weapons_backward;
+
+void decode_hotkeys(ModifiableActionQueues& action_queues)
+{
+	for (auto player_index = 0; player_index < dynamic_world->player_count; ++player_index)
+	{
+		bool suppress_action_flags = false;
+		
+		auto action_flags = action_queues.peekActionFlags(player_index, 0);
+		auto player = get_player_data(player_index);
+		player->hotkey = 0;
+		
+		if (player->hotkey_sequence == 0x03)
+		{
+			// the next set of flags must contain one cycle flag, or this isn't
+			// a legitimate hot key and we need to pass both cycle flags back
+			// through (one tick late) because the player somehow managed to
+			// activate them at exactly the same time!
+			if (action_flags & hotkey_mask)
+			{
+				suppress_action_flags = true;
+				player->hotkey_sequence <<= 2;
+				player->hotkey_sequence |= (action_flags >> _cycle_weapons_forward_bit) & 0x03;
+			}
+			else
+			{
+				action_queues.modifyActionFlags(player_index, _cycle_weapons_forward, _cycle_weapons_forward);
+				action_queues.modifyActionFlags(player_index, _cycle_weapons_forward, _cycle_weapons_backward);
+				player->hotkey_sequence = 0;
+			}
+		}
+		else if (player->hotkey_sequence)
+		{
+			assert((player->hotkey_sequence & 0x0c) == 0x0c);
+			suppress_action_flags = true;
+			player->hotkey_sequence <<= 2;
+			player->hotkey_sequence |= (action_flags >> _cycle_weapons_forward_bit) & 0x03;
+
+			player->hotkey = 1 + (player->hotkey_sequence & 0x03) + 4 * (((player->hotkey_sequence >> 2) & 0x03) - 1);
+			player->hotkey_sequence = 0;
+		}
+		else if ((action_flags & hotkey_mask) == hotkey_mask)
+		{
+			suppress_action_flags = true;
+			player->hotkey_sequence = 0x03;
+		}
+
+		if (suppress_action_flags)
+		{
+			action_queues.modifyActionFlags(player_index, 0, _cycle_weapons_forward);
+			action_queues.modifyActionFlags(player_index, 0, _cycle_weapons_backward);
+		}
+	}
 }
 
 /* assumes ¶t==1 tick */
@@ -1579,7 +1634,7 @@ static void set_player_shapes(
 }
 
 /* We can rebuild him!! */
-static void revive_player(
+void revive_player(
 	short player_index)
 {
 	struct player_data *player= get_player_data(player_index);
@@ -2208,6 +2263,8 @@ uint8 *unpack_player_data(uint8 *Stream, player_data *Objects, size_t Count)
 		StreamToList(S,ObjPtr->netgame_parameters,2);
 		
 		S += 256*2;
+
+		ObjPtr->hotkey_sequence = 0;
 	}
 	
 	assert((S - Stream) == static_cast<ptrdiff_t>(Count*SIZEOF_player_data));

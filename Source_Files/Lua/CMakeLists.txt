@@ -40,4 +40,5 @@ add_library(
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_serialize.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_hud_objects.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_hud_script.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/lua_ephemera.cpp
 )
