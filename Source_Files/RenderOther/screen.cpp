@@ -1451,9 +1451,12 @@ void render_screen(short ticks_elapsed)
         clear_screen_margin();
     
 	// Update software_render_dest
+#ifdef HAVE_OPENGL
 	if (OGL_IsActive())
 		software_render_dest.clear();
-	else if (software_render_dest.empty() || ViewChangedSize)
+	else
+#endif
+	if (software_render_dest.empty() || ViewChangedSize)
 		software_render_dest = bitmap_definition_of_sdl_surface(world_pixels);
 	
 	// Render world view

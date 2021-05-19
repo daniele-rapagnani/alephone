@@ -55,7 +55,10 @@
 
 #ifdef __ANDROID__
 #include "android_assets.h"
+#include <unistd.h>
+#include <sys/stat.h>
 #include <dirent.h>
+#include <stdio.h>
 #endif
 
 #ifdef HAVE_ZZIP
@@ -388,10 +391,14 @@ bool FileSpecifier::Create(Typecode Type)
 // Create directory
 bool FileSpecifier::CreateDirectory()
 {
+#ifdef __ANDROID__
+	return mkdir(utf8_to_path(name).c_str(), 0777);
+#else
 	sys::error_code ec;
 	const bool created_dir = fs::create_directory(utf8_to_path(name), ec);
 	err = ec.value() == 0 ? (created_dir ? 0 : EEXIST) : to_posix_code_or_unknown(ec);
 	return err == 0;
+#endif
 }
 
 #ifdef HAVE_ZZIP
@@ -516,19 +523,49 @@ bool FileSpecifier::Exists()
 
 bool FileSpecifier::IsDir()
 {
+#ifdef __ANDROID__
+	using Node = const android_assets::BakedFilesystem::Node;
+	const Node* dir = android_assets::BakedFilesystem::instance().get_file(utf8_to_path(name).c_str());
+
+	if (dir && dir->directory)
+	{
+		return true;
+	}
+
+	struct stat st;
+
+	if (stat(utf8_to_path(name).c_str(), &st) != 0)
+	{
+		return false;
+	}
+
+	return S_ISDIR(st.st_mode);
+#else
 	sys::error_code ec;
 	const bool is_dir = fs::is_directory(utf8_to_path(name), ec);
 	err = to_posix_code_or_unknown(ec);
 	return err == 0 && is_dir;
+#endif
 }
 
 // Get modification date
 TimeType FileSpecifier::GetDate()
 {
+#ifdef __ANDROID__
+	struct stat st;
+
+	if (stat(utf8_to_path(name).c_str(), &st) != 0)
+	{
+		return 0;
+	}
+
+	return st.st_mtime;
+#else
 	sys::error_code ec;
 	const auto mtime = fs::last_write_time(utf8_to_path(name), ec);
 	err = to_posix_code_or_unknown(ec);
 	return err == 0 ? mtime : 0;
+#endif
 }
 
 static const char * alephone_extensions[] = {
@@ -699,18 +736,26 @@ bool FileSpecifier::GetFreeSpace(uint32 &FreeSpace)
 // Delete file
 bool FileSpecifier::Delete()
 {
+#ifdef __ANDROID__
+	return remove(utf8_to_path(name).c_str()) == 0;
+#else
 	sys::error_code ec;
 	const bool removed = fs::remove(utf8_to_path(name), ec);
 	err = ec.value() == 0 ? (removed ? 0 : ENOENT) : to_posix_code_or_unknown(ec);
 	return err == 0;
+#endif
 }
 
 bool FileSpecifier::Rename(const FileSpecifier& Destination)
 {
+#ifdef __ANDROID__
+	return ::rename(utf8_to_path(name).c_str(), utf8_to_path(Destination.name).c_str()) == 0;
+#else
 	sys::error_code ec;
 	fs::rename(utf8_to_path(name), utf8_to_path(Destination.name), ec);
 	err = to_posix_code_or_unknown(ec);
 	return err == 0;
+#endif
 }
 
 // Set to local (per-user) data directory
@@ -911,7 +956,7 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 
         	for (const Node* n : files)
 			{
-				vec.push_back(dir_entry(n->name, n->size, n->directory, false));
+				vec.push_back(dir_entry(n->name, n->directory));
 			}
 		}
 
@@ -920,8 +965,28 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
             return true;
         }
     }
-#endif
 
+	DIR *d = opendir(GetPath());
+
+    if (d == NULL) {
+		err = errno;
+		return false;
+	}
+	struct dirent *de = readdir(d);
+	while (de) {
+		FileSpecifier full_path = name;
+		full_path += de->d_name;
+		struct stat st;
+		if (stat(full_path.GetPath(), &st) == 0) {
+			// Ignore files starting with '.' and the directories '.' and '..'
+			if (de->d_name[0] != '.' || (S_ISDIR(st.st_mode) && !(de->d_name[1] == '\0' || de->d_name[1] == '.')))
+				vec.push_back(dir_entry(de->d_name, S_ISDIR(st.st_mode), st.st_mtime));
+		}
+		de = readdir(d);
+	}
+	closedir(d);
+	err = 0;
+#else
 	sys::error_code ec;
 	for (fs::directory_iterator it(utf8_to_path(name), ec), end; it != end; it.increment(ec))
 	{
@@ -942,6 +1007,7 @@ bool FileSpecifier::ReadDirectory(vector<dir_entry> &vec)
 	} 
 	
 	err = to_posix_code_or_unknown(ec);
+#endif
 
 	return err == 0;
 }

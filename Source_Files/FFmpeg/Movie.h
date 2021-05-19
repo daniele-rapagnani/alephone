@@ -68,8 +68,11 @@ private:
   SDL_sem *encodeReady;
   SDL_sem *fillReady;
   bool stillEncoding;
+
+#ifdef HAVE_OPENGL
   std::unique_ptr<FBO> frameBufferObject;
-  
+#endif
+
   Movie();  
   bool Setup();
   static int Movie_EncodeThread(void *arg);
