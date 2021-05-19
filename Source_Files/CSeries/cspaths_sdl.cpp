@@ -28,6 +28,7 @@
 #endif
 
 #ifdef __ANDROID__
+#include "android_assets.h"
 #include <SDL.h>
 #endif
 
@@ -180,8 +181,12 @@ static std::string _get_local_data_path()
 #ifdef __ANDROID__
 	static std::string path;
 
-	if (path.empty()) {
-		path = SDL_GetPrefPath("alephone", get_application_identifier().c_str());
+	if (path.empty())
+	{
+		if (!android_assets::get_scenario_datapath(path))
+		{
+			path = SDL_GetPrefPath("alephone", get_application_identifier().c_str());
+		}
 	}
 
 	return path;

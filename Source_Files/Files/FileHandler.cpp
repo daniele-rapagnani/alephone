@@ -392,7 +392,9 @@ bool FileSpecifier::Create(Typecode Type)
 bool FileSpecifier::CreateDirectory()
 {
 #ifdef __ANDROID__
-	return mkdir(utf8_to_path(name).c_str(), 0777);
+	const char* path = utf8_to_path(name).c_str();
+	bool result = mkdir(path, 0700) == 0;
+	return result;
 #else
 	sys::error_code ec;
 	const bool created_dir = fs::create_directory(utf8_to_path(name), ec);

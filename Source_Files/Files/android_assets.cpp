@@ -12,6 +12,8 @@
 #include <cassert>
 #include <stack>
 
+#include <boost/algorithm/string.hpp>
+
 namespace android_assets {
 
 AAssetManager* asset_manager = nullptr;
@@ -24,6 +26,43 @@ void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(
 )
 {
     asset_manager = AAssetManager_fromJava(env, am);
+}
+
+namespace {
+
+std::string scenarioPath = {};
+bool hasScenarioPath = false;
+
+}
+
+JNIEXPORT void JNICALL Java_com_marathon_alephone_MainActivity_setScenarioPath(
+    JNIEnv* env,
+    jclass c,
+    jstring path
+)
+{
+    const char* cpath = env->GetStringUTFChars(path, nullptr);
+
+    if (!cpath)
+    {
+        return;
+    }
+
+    scenarioPath.assign(cpath);
+    hasScenarioPath = true;
+
+    env->ReleaseStringUTFChars(path, cpath);
+}
+
+bool get_scenario_datapath(std::string& path)
+{
+    if (!hasScenarioPath)
+    {
+        return false;
+    }
+
+    path = scenarioPath;
+    return true;
 }
 
 bool install_to_internal_storage(

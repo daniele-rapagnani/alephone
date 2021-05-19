@@ -431,17 +431,27 @@ static void initialize_application(void)
 		if (!path.empty())
 			data_search_path.push_back(path);
 	} else {
-		if (shell_options.directory == "" && default_data_env == "")
-		{
+		if (shell_options.directory == "" && default_data_env == "") {
 			dsp_delete_pos = data_search_path.size();
 			data_search_path.push_back(default_data_dir);
 		}
-		
+
 		string legacy_data_path = get_data_path(kPathLegacyData);
 		if (!legacy_data_path.empty())
 			data_search_path.push_back(DirectorySpecifier(legacy_data_path));
 		data_search_path.push_back(local_data_dir);
 	}
+
+#ifdef __ANDROID__
+	{
+		std::string andDataPath;
+		if (android_assets::get_scenario_datapath(andDataPath))
+		{
+			data_search_path.clear();
+			data_search_path.push_back(andDataPath);
+		}
+	}
+#endif
 
 	// Setup resource manager
 	initialize_resources();

@@ -23,12 +23,21 @@ extern "C" {
 JNIEXPORT
 void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(JNIEnv *, jclass, jobject);
 
+JNIEXPORT
+void JNICALL Java_com_marathon_alephone_MainActivity_setScenarioPath(
+    JNIEnv* env,
+    jclass c,
+    jstring path
+);
+
 }
 
 bool install_to_internal_storage(
     const std::string& path,
     const std::string& toPath = ""
 );
+
+bool get_scenario_datapath(std::string& path);
 
 class BakedFilesystem
 {
