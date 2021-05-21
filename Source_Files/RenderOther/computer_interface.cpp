@@ -784,8 +784,7 @@ uint32 build_terminal_action_flags(
 	}
 
 #ifdef __ANDROID__
-	uint32 touchflags = process_touches_terminal();
-	raw_flags |= touchflags;
+	raw_flags = process_touches_terminal(raw_flags);
 #endif
 
 	/* Only catch the key the first time. */

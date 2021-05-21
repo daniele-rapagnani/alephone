@@ -8,11 +8,13 @@
 #include "screen.h"
 #include "player.h"
 #include "touch.h"
+#include "preferences.h"
 
 static touch_info* touches[MAX_TOUCHES];
 static touch_config config = {};
 static SDL_DisplayMode display_mode = {};
 static SDL_Rect virtual_screen_size = {};
+static touch_info* action_touch = nullptr;
 
 void initialize_touch(const touch_config& config)
 {
@@ -105,25 +107,77 @@ bool remove_touch(Uint8 touchId)
         return false;
     }
 
+    if (action_touch && touches[touchId] == action_touch)
+    {
+        action_touch = nullptr;
+    }
+
     delete touches[touchId];
     touches[touchId] = nullptr;
 
     return true;
 }
 
-int process_touches()
+bool touch_in_cell(const touch_info& touch, Uint8 x, Uint8 y)
 {
-    int flags = 0;
+    float left = 0.0f;
+    float right = 1.0f;
+    float top = 0.0f;
+    float bottom = 0.0f;
 
-    for (Uint8 i = 0; i < MAX_TOUCHES; i++)
+    switch(x)
     {
-        if (!touches[i] || !touches[i]->active)
-        {
-            continue;
-        }
+        case 0:
+            left = 0.0f;
+            right = input_preferences->touch_zone_left / 100.0f;
+            break;
 
-        touch_info* ti = touches[i];
+        case 1:
+            left = input_preferences->touch_zone_left / 100.0f;
+            right = input_preferences->touch_zone_right / 100.0f;
+            break;
 
+        case 2:
+            left = input_preferences->touch_zone_right / 100.0f;
+            right = 1.0f;
+            break;
+
+        default:
+            return false;
+    }
+
+    switch(y)
+    {
+        case 0:
+            top = 0.0f;
+            bottom = input_preferences->touch_zone_top / 100.0f;
+            break;
+
+        case 1:
+            top = input_preferences->touch_zone_top / 100.0f;
+            bottom = input_preferences->touch_zone_bottom / 100.0f;
+            break;
+
+        case 2:
+            top = input_preferences->touch_zone_bottom / 100.0f;
+            bottom = 1.0f;
+            break;
+
+        default:
+            return false;
+    }
+
+    return
+        touch.screenStartX >= virtual_screen_size.w * left
+        && touch.screenStartX < virtual_screen_size.w * right
+        && touch.screenStartY >= virtual_screen_size.h * top
+        && touch.screenStartY < virtual_screen_size.h * bottom
+    ;
+}
+
+int process_touches(int flags)
+{
+    for_each_touch([&flags] (touch_info* ti) {
         float ydist = std::fabsf(ti->screenY - ti->screenStartY);
         float xdist = std::fabsf(ti->screenX - ti->screenStartX);
 
@@ -132,40 +186,49 @@ int process_touches()
 
         float timeElapsed = static_cast<float>(ti->lastTime) - ti->startTime;
 
-        if (
-            ti->screenStartX > virtual_screen_size.w * 0.66f
-            && ti->screenStartY > virtual_screen_size.h * 0.5f
-        )
+        if (touch_in_cell(*ti, 2, 2))
         {
-            if (ydist > config.vertical_dead_zone_px)
+            float yaw = 0.0f;
+            float pitch = 0.0f;
+
+            if (ydist > input_preferences->touch_vertical_deadzone)
             {
-                flags |= ysign < 0 ? _moving_forward : _moving_backward;
+                if (action_touch)
+                {
+                    pitch = (ydist - input_preferences->touch_vertical_deadzone)
+                        / input_preferences->touch_pitch_zone_size * -ysign
+                    ;
+                }
+                else
+                {
+                    flags |= ysign < 0 ? _moving_forward : _moving_backward;
+                }
             }
 
-            if (xdist > config.horizontal_dead_zone_px)
+            if (xdist > input_preferences->touch_horizontal_deadzone)
             {
-                flags |= xsign < 0 ? _turning_left : _turning_right;
+                yaw = (xdist - input_preferences->touch_horizontal_deadzone)
+                    / input_preferences->touch_yaw_zone_size * xsign
+                ;
+            }
+
+            const fixed_angle dyaw = static_cast<fixed_angle>(yaw * FIXED_ONE);
+            const fixed_angle dpitch = static_cast<fixed_angle>(pitch * FIXED_ONE);
+
+            if (dyaw != 0 || dpitch != 0)
+            {
+                flags = process_aim_input(flags, {dyaw, dpitch});
             }
         }
-        else if(
-            ti->screenStartX < virtual_screen_size.w * 0.33f
-            && ti->screenStartY > virtual_screen_size.h * 0.5f
-        )
+        else if(touch_in_cell(*ti, 0, 2))
         {
             flags |= _left_trigger_state;
         }
-        else if(
-                ti->screenStartX < virtual_screen_size.w * 0.33f
-                && ti->screenStartY < virtual_screen_size.h * 0.5f
-                )
+        else if(touch_in_cell(*ti, 0, 0))
         {
             flags |= _right_trigger_state;
         }
-        else if(
-            ti->screenStartX > virtual_screen_size.w * 0.33f
-            && ti->screenStartX < virtual_screen_size.w * 0.66f
-            && ti->screenStartY < virtual_screen_size.h * 0.5f
-        )
+        else if(touch_in_cell(*ti, 1, 0))
         {
             if (
                 xdist > config.weapon_switch_gesture_dist
@@ -185,33 +248,32 @@ int process_touches()
                 ti->active = false;
             }
         }
-        else if(
-                ti->screenStartX > virtual_screen_size.w * 0.33f
-                && ti->screenStartX < virtual_screen_size.w * 0.66f
-                && ti->screenStartY > virtual_screen_size.h * 0.5f
-                )
+        else if(touch_in_cell(*ti, 1, 2))
         {
-            flags |= _action_trigger_state;
+            if (action_touch && action_touch != ti)
+            {
+                flags |= _looking_center;
+            }
+            else
+            {
+                flags |= _action_trigger_state;
+                action_touch = ti;
+            }
+
             ti->active = false;
         }
-    }
+        else if (touch_in_cell(*ti, 2, 0))
+        {
+            flags |= _swim;
+        }
+    });
 
     return flags;
 }
 
-int process_touches_terminal()
+int process_touches_terminal(int flags)
 {
-    int flags = 0;
-
-    for (Uint8 i = 0; i < MAX_TOUCHES; i++)
-    {
-        if (!touches[i] || !touches[i]->active)
-        {
-            continue;
-        }
-
-        touch_info* ti = touches[i];
-
+    for_each_touch([&flags] (touch_info* ti) {
         if (ti->screenStartX < virtual_screen_size.w * 0.5f)
         {
             flags |= _turning_left;
@@ -222,23 +284,13 @@ int process_touches_terminal()
         }
 
         ti->active = false;
-    }
+    });
 
     return flags;
 }
 
-int process_touches_map()
+int process_touches_map(int flags)
 {
-    int flags = 0;
-
-    for (Uint8 i = 0; i < MAX_TOUCHES; i++)
-    {
-        if (!touches[i] || !touches[i]->active)
-        {
-            continue;
-        }
-    }
-
     return flags;
 }
 
@@ -251,5 +303,23 @@ void remove_all_touches()
             delete touches[i];
             touches[i] = nullptr;
         }
+    }
+}
+
+void for_each_touch(std::function<void(touch_info* ti)> f)
+{
+    if (!f)
+    {
+        return;
+    }
+
+    for (Uint8 i = 0; i < MAX_TOUCHES; i++)
+    {
+        if (!touches[i] || !touches[i]->active)
+        {
+            continue;
+        }
+
+        f(touches[i]);
     }
 }

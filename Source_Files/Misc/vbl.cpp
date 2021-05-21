@@ -1178,7 +1178,9 @@ uint32 parse_keymap(void)
       }
       
       // ZZZ: let mouse code simulate keypresses
+#ifndef __ANDROID__
       mouse_buttons_become_keypresses(key_map);
+#endif
       joystick_buttons_become_keypresses(key_map);
       
       // Parse the keymap
@@ -1250,18 +1252,14 @@ uint32 parse_keymap(void)
 	      (local_player->variables.flags & _HEAD_BELOW_MEDIA_BIT) ?
 	      (input_preferences->modifiers & _inputmod_interchange_swim_sink) != 0:
 	      (input_preferences->modifiers & _inputmod_interchange_run_walk) != 0;
-      
-      // Handle the selected input controller
-      if (input_preferences->input_device == _mouse_yaw_pitch) {
-          flags = process_aim_input(flags, pull_mouselook_delta());
-      }
 
 #ifdef __ANDROID__
-		int touchflags = process_touches();
-
-		if (touchflags) {
-			flags = touchflags;
-		}
+      flags = process_touches(flags);
+#else
+	  // Handle the selected input controller
+	  if (input_preferences->input_device == _mouse_yaw_pitch) {
+		  flags = process_aim_input(flags, pull_mouselook_delta());
+	  }
 #endif
 
         int joyflags = process_joystick_axes(flags, heartbeat_count);

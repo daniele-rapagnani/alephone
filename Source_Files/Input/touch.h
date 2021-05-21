@@ -12,8 +12,6 @@
 
 struct touch_config
 {
-    float vertical_dead_zone_px = 20.0f;
-    float horizontal_dead_zone_px = 20.0f;
     float weapon_switch_gesture_time = 300.0f;
     float weapon_switch_gesture_dist = 50.0f;
     float open_map_gesture_time = 300.0f;
@@ -37,10 +35,12 @@ struct touch_info
 
 void initialize_touch(const touch_config& config);
 void add_touch(Uint8 touchId);
-int process_touches();
-int process_touches_terminal();
-int process_touches_map();
+int process_touches(int flags);
+int process_touches_terminal(int flags);
+int process_touches_map(int flags);
+bool touch_in_cell(const touch_info& touch, Uint8 x, Uint8 y);
 void move_touch_normalized(Uint8 touchId, float x, float y);
+void for_each_touch(std::function<void(touch_info* ti)> f);
 touch_info* get_touch_info(Uint8 touchId);
 bool remove_touch(Uint8 touchId);
 void remove_all_touches();

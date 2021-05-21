@@ -221,6 +221,15 @@ struct input_preferences_data
 	bool controller_analog;
 	_fixed controller_sensitivity;
 
+	int16 touch_yaw_zone_size;
+	int16 touch_pitch_zone_size;
+	int16 touch_horizontal_deadzone;
+	int16 touch_vertical_deadzone;
+	int16 touch_zone_top;
+	int16 touch_zone_bottom;
+	int16 touch_zone_left;
+	int16 touch_zone_right;
+
 	// if an axis reading is taken below this number in absolute
 	// value, then we clip it to 0.  this lets people use
 	// inaccurate zero points.

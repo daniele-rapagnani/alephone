@@ -1573,6 +1573,12 @@ static void sound_dialog(void *arg)
 const float kMinSensitivityLog = -3.0f;
 const float kMaxSensitivityLog = 3.0f;
 const float kSensitivityLogRange = kMaxSensitivityLog - kMinSensitivityLog;
+const int kMinTouchYawZoneSize = 2;
+const int kMaxTouchYawZoneSize = 50;
+const int kMinTouchPitchZoneSize = 2;
+const int kMaxTouchPitchZoneSize = 50;
+const int kMinTouchDeadZone = 0;
+const int kMaxTouchDeadZone = 50;
 
 class w_sens_slider : public w_slider {
 public:
@@ -2284,6 +2290,91 @@ static void controller_details_dialog(void *arg)
 	}
 }
 
+static void touch_details_dialog(void *arg)
+{
+	dialog d;
+	vertical_placer *placer = new vertical_placer;
+	placer->dual_add(new w_title("TOUCH ADVANCED"), d);
+	placer->add(new w_spacer());
+
+	table_placer *table = new table_placer(2, get_theme_space(ITEM_WIDGET), true);
+	table->col_flags(0, placeable::kAlignRight);
+
+	int touchYawZone = input_preferences->touch_yaw_zone_size;
+	touchYawZone = std::max(kMinTouchYawZoneSize, std::min(touchYawZone, kMaxTouchYawZoneSize));
+
+	w_slider* touch_zone_w = new w_slider(kMaxTouchYawZoneSize - kMinTouchYawZoneSize, touchYawZone);
+	table->dual_add(touch_zone_w->label("Yaw Zone Size"), d);
+	table->dual_add(touch_zone_w, d);
+
+	int touchPitchZone = input_preferences->touch_pitch_zone_size;
+	touchPitchZone = std::max(kMinTouchPitchZoneSize, std::min(touchPitchZone, kMaxTouchPitchZoneSize));
+
+	w_slider* touch_pzone_w = new w_slider(kMaxTouchPitchZoneSize - kMinTouchPitchZoneSize, touchPitchZone);
+	table->dual_add(touch_pzone_w->label("Pitch Zone Size"), d);
+	table->dual_add(touch_pzone_w, d);
+
+	int touchHDZ = input_preferences->touch_horizontal_deadzone;
+	touchHDZ = std::max(kMinTouchDeadZone, std::min(touchHDZ, kMaxTouchDeadZone));
+
+	w_slider* touch_hdz_w = new w_slider(kMaxTouchDeadZone - kMinTouchDeadZone, touchHDZ);
+	table->dual_add(touch_hdz_w->label("Horizontal Dead Zone"), d);
+	table->dual_add(touch_hdz_w, d);
+
+	int touchVDZ = input_preferences->touch_vertical_deadzone;
+	touchVDZ = std::max(kMinTouchDeadZone, std::min(touchVDZ, kMaxTouchDeadZone));
+
+	w_slider* touch_vdz_w = new w_slider(kMaxTouchDeadZone - kMinTouchDeadZone, touchVDZ);
+	table->dual_add(touch_vdz_w->label("Vertical Dead Zone"), d);
+	table->dual_add(touch_vdz_w, d);
+
+	table->add_row(new w_spacer(), true);
+	placer->add(table, true);
+
+	horizontal_placer *button_placer = new horizontal_placer;
+	button_placer->dual_add(new w_button("ACCEPT", dialog_ok, &d), d);
+	button_placer->dual_add(new w_button("CANCEL", dialog_cancel, &d), d);
+	placer->add(button_placer, true);
+
+	d.set_widget_placer(placer);
+
+	// Run dialog
+	if (d.run() == 0) {	// Accepted
+		bool changed = false;
+
+		int yawZoneSel = touch_zone_w->get_selection();
+
+		if (yawZoneSel != input_preferences->touch_yaw_zone_size) {
+			input_preferences->touch_yaw_zone_size = yawZoneSel;
+			changed = true;
+		}
+
+		int pitchZoneSel = touch_pzone_w->get_selection();
+
+		if (pitchZoneSel != input_preferences->touch_pitch_zone_size) {
+			input_preferences->touch_pitch_zone_size = pitchZoneSel;
+			changed = true;
+		}
+
+		int touchHDZ = touch_hdz_w->get_selection();
+
+		if (touchHDZ != input_preferences->touch_horizontal_deadzone) {
+			input_preferences->touch_horizontal_deadzone = touchHDZ;
+			changed = true;
+		}
+
+		int touchVDZ = touch_vdz_w->get_selection();
+
+		if (touchVDZ != input_preferences->touch_vertical_deadzone) {
+			input_preferences->touch_vertical_deadzone = touchVDZ;
+			changed = true;
+		}
+
+		if (changed) {
+			write_preferences();
+		}
+	}
+}
 
 static void controls_dialog(void *arg)
 {
@@ -2711,7 +2802,9 @@ static void controls_dialog(void *arg)
 	tabs->add(iface, true);
 	tabs->add(other, true);
 	placer->add(tabs, true);
-	
+
+	placer->add(new w_spacer(), true);
+	placer->dual_add(new w_button("TOUCH ADVANCED", touch_details_dialog, &d), d);
 	placer->add(new w_spacer(), true);
 	placer->dual_add(new w_button("RESET ALL KEYS TO DEFAULTS", load_default_keys, &d), d);
 	placer->add(new w_spacer(), true);
@@ -3606,6 +3699,14 @@ InfoTree input_preferences_tree()
 	root.put_attr("controller_analog", input_preferences->controller_analog);
 	root.put_attr("controller_sensitivity", input_preferences->controller_sensitivity);
 	root.put_attr("controller_deadzone", input_preferences->controller_deadzone);
+	root.put_attr("touch_yaw_zone_size", input_preferences->touch_yaw_zone_size);
+	root.put_attr("touch_pitch_zone_size", input_preferences->touch_pitch_zone_size);
+	root.put_attr("touch_horizontal_deadzone", input_preferences->touch_horizontal_deadzone);
+	root.put_attr("touch_vertical_deadzone", input_preferences->touch_vertical_deadzone);
+	root.put_attr("touch_zone_top", input_preferences->touch_zone_top);
+	root.put_attr("touch_zone_bottom", input_preferences->touch_zone_bottom);
+	root.put_attr("touch_zone_left", input_preferences->touch_zone_left);
+	root.put_attr("touch_zone_right", input_preferences->touch_zone_right);
 	
 	for (int i = 0; i < (NUMBER_OF_KEYS + NUMBER_OF_SHELL_KEYS); ++i)
 	{
@@ -3917,6 +4018,14 @@ static void default_input_preferences(input_preferences_data *preferences)
 	preferences->extra_mouse_precision = true;
 	preferences->classic_vertical_aim = false;
 	preferences->classic_aim_speed_limits = true;
+	preferences->touch_yaw_zone_size = 10;
+	preferences->touch_pitch_zone_size = 20;
+	preferences->touch_horizontal_deadzone = 10;
+	preferences->touch_vertical_deadzone = 20;
+	preferences->touch_zone_top = 50;
+	preferences->touch_zone_bottom = 50;
+	preferences->touch_zone_left = 33;
+	preferences->touch_zone_right = 66;
 
 	preferences->controller_analog = true;
 	preferences->controller_sensitivity = FIXED_ONE;
