@@ -19,7 +19,7 @@ namespace android_assets {
 AAssetManager* asset_manager = nullptr;
 
 JNIEXPORT
-void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(
+void JNICALL Java_com_marathon_alephone_AlephOneActivity_setAssetManager(
     JNIEnv* env,
     jclass c,
     jobject am
@@ -35,7 +35,7 @@ bool hasScenarioPath = false;
 
 }
 
-JNIEXPORT void JNICALL Java_com_marathon_alephone_MainActivity_setScenarioPath(
+JNIEXPORT void JNICALL Java_com_marathon_alephone_AlephOneActivity_setScenarioPath(
     JNIEnv* env,
     jclass c,
     jstring path

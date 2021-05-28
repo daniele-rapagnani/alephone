@@ -21,10 +21,10 @@ extern AAssetManager* asset_manager;
 extern "C" {
 
 JNIEXPORT
-void JNICALL Java_com_marathon_alephone_MainActivity_setAssetManager(JNIEnv *, jclass, jobject);
+void JNICALL Java_com_marathon_alephone_AlephOneActivity_setAssetManager(JNIEnv *, jclass, jobject);
 
 JNIEXPORT
-void JNICALL Java_com_marathon_alephone_MainActivity_setScenarioPath(
+void JNICALL Java_com_marathon_alephone_AlephOneActivity_setScenarioPath(
     JNIEnv* env,
     jclass c,
     jstring path
